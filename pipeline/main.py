@@ -16,7 +16,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from . import config, dart, factors, krx, prices, signals, telegram, tracker
+from . import config, dart, factors, krx, naver, prices, signals, telegram, tracker
 
 # (필드, 배율, 소수자리)  배율: 원→억은 1e-8, 비율→%는 100
 FIELDS = [
@@ -111,25 +111,35 @@ def main(argv=None) -> int:
     warnings: list[str] = []
     cache = Path(a.cache)
 
+    source = "KRX Open API"
     if a.demo:
         from . import demo
         mk = demo.DemoMarket(today)
         kc, dc = mk, demo.DemoDart(mk)
+        source = "샘플"
     else:
-        kc = krx.KrxClient(os.environ.get("KRX_API_KEY"))
+        kc = krx.KrxClient(os.environ["KRX_API_KEY"]) if os.environ.get("KRX_API_KEY") else None
         try:
             dc = dart.DartClient(os.environ.get("DART_API_KEY"))
         except dart.DartError as e:
             dc = None
             warnings.append(str(e) + " 재무 팩터 없이 계산했습니다.")
 
-    store = krx.KrxStore(kc, cache / "krx", today)
-    asof_d = store.find_asof()
-    asof = krx.ymd(asof_d)
-    print(f"기준일 {asof_d} — 주가 이력 수집 중…")
-    long = store.history(asof_d, cfg["history_calendar_days"], cfg["universe"]["markets"])
+    if kc is None:
+        source = "네이버 증권(비공식)"
+        warnings.append("주가는 네이버 증권 시세로 계산했습니다(관리종목 필터 없음). KRX_API_KEY를 등록하면 자동으로 KRX로 바뀝니다.")
+        print("KRX 키 없음 → 네이버 증권 시세 사용. 주가 이력 수집 중…")
+        long, asof_d = naver.NaverSource(cache / "naver").load(today)
+        asof = krx.ymd(asof_d)
+    else:
+        store = krx.KrxStore(kc, cache / "krx", today)
+        asof_d = store.find_asof()
+        asof = krx.ymd(asof_d)
+        print(f"기준일 {asof_d} — 주가 이력 수집 중…")
+        long = store.history(asof_d, cfg["history_calendar_days"], cfg["universe"]["markets"])
+        print(f"  KRX 신규 요청 {store.fetched}건")
     panel, last, events = prices.build(long, asof)
-    print(f"  KRX 신규 요청 {store.fetched}건, 거래일 {len(panel['close'])}일, 종목 {len(last)}개, 권리변동 보정 {events}건")
+    print(f"  기준일 {asof_d}, 거래일 {len(panel['close'])}일, 종목 {len(last)}개, 권리변동 보정 {events}건")
 
     fund = pd.DataFrame()
     if dc is not None:
@@ -157,7 +167,7 @@ def main(argv=None) -> int:
         "n": int(len(df)), "sample": bool(a.demo), "fin_dist": fin_dist,
         "approx_ttm": int(df["fin"].fillna("").str.endswith("*").sum()),
         "warnings": warnings, "strats": tracker.STRATS, "horizons": list(tracker.HORIZONS),
-        "aplan": cfg["aplan"], "universe": cfg["universe"],
+        "aplan": cfg["aplan"], "universe": cfg["universe"], "source": source,
     }
     payload = build_payload(df, panel, meta, perf, recent)
     out = Path(a.out) / "data"
