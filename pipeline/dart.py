@@ -155,7 +155,7 @@ def _label(y: int, r: str) -> str:
 
 
 def load_fundamentals(client, stock_codes: list[str], asof: dt.date, cache_dir: Path,
-                      workers: int = 3, log=print) -> pd.DataFrame:
+                      workers: int = 3, budget_sec: int = 600, log=print) -> pd.DataFrame:
     cache_dir = Path(cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -170,33 +170,60 @@ def load_fundamentals(client, stock_codes: list[str], asof: dt.date, cache_dir: 
         cc_path.write_text(json.dumps(cc), encoding="utf-8")
 
     pairs = [(s, cc[s]) for s in stock_codes if s in cc]
+    s2c, c2s = dict(pairs), {c: s for s, c in pairs}
     t0 = time.time()
     client.multi(["00126380"], asof.year - 1, "11011")   # 접속 확인(삼성전자 1개사). 실패하면 여기서 예외
     log(f"  DART 접속 확인 ({time.time() - t0:.1f}초)")
-    deadline = time.time() + 480
-    corp_list = [c for _, c in pairs]
-    batches = [corp_list[i:i + 100] for i in range(0, len(corp_list), 100)]
+    deadline = time.time() + budget_sec
 
+    # 회사별로 언제 받았는지 기록해 두고, 오래된 것만 다시 받는다(재무는 분기마다만 바뀜).
+    # 시간 안에 못 받은 회사는 다음 실행 때 이어서 받는다.
     periods = candidate_periods(asof)
     data: dict[tuple[int, str], dict] = {}
+    now = time.time()
     for idx, (y, r) in enumerate(periods):
         p = cache_dir / f"{y}_{r}.json"
-        ttl = 2 * 86400 if idx < 2 else 20 * 86400
-        if p.exists() and (time.time() - p.stat().st_mtime) < ttl:
-            data[(y, r)] = json.loads(p.read_text(encoding="utf-8"))
-            continue
-        if time.time() > deadline:
-            log(f"  DART 시간 제한 — {y} {r} 건너뜀")
-            data[(y, r)] = json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
-            continue
-        t0 = time.time()
-        with ThreadPoolExecutor(workers) as ex:
-            parts = list(ex.map(lambda b: client.multi(b, y, r), batches))
-        rows = [x for part in parts for x in part]
-        parsed = parse_period(rows, r, {c: s for s, c in pairs})
-        p.write_text(json.dumps(parsed, ensure_ascii=False), encoding="utf-8")
-        data[(y, r)] = parsed
-        log(f"  DART {y} {r}: {len(parsed)}개사 ({time.time() - t0:.0f}초)")
+        st = {"t": {}, "d": {}}
+        if p.exists():
+            raw = json.loads(p.read_text(encoding="utf-8"))
+            if "t" in raw and "d" in raw:
+                st = raw
+            else:                                           # 예전 형식 변환
+                st = {"t": {k: p.stat().st_mtime for k in raw}, "d": raw}
+        ttl = (7 if idx < 2 else 90) * 86400
+        need = [sc for sc, _ in pairs if now - st["t"].get(sc, 0) > ttl]
+        batches = [need[i:i + 100] for i in range(0, len(need), 100)]
+        t1, done, failed = time.time(), 0, 0
+        for i in range(0, len(batches), workers):
+            if time.time() > deadline:
+                break
+            chunk = batches[i:i + workers]
+
+            def fetch(b):
+                try:
+                    return client.multi([s2c[x] for x in b], y, r)
+                except DartError as e:
+                    if "인증키" in str(e) or "한도" in str(e):
+                        raise
+                    return None
+
+            with ThreadPoolExecutor(workers) as ex:
+                results = list(ex.map(fetch, chunk))
+            for b, rows in zip(chunk, results):
+                if rows is None:
+                    failed += 1
+                    continue
+                parsed = parse_period(rows, r, c2s)
+                t = time.time()
+                for x in b:
+                    st["d"][x] = parsed.get(x)
+                    st["t"][x] = t
+                done += len(b)
+            p.write_text(json.dumps(st, ensure_ascii=False), encoding="utf-8")
+        left = len(need) - done
+        if need:
+            log(f"  DART {y} {r}: {done}개사 갱신, 남은 {left}개사, 실패 묶음 {failed} ({time.time() - t1:.0f}초)")
+        data[(y, r)] = {k: v for k, v in st["d"].items() if v}
 
     out = []
     for sc in stock_codes:

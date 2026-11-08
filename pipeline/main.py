@@ -16,7 +16,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from . import config, dart, factors, krx, naver, prices, signals, telegram, tracker
+from . import config, dart, factors, krx, naver, ntfy, prices, signals, telegram, tracker
 
 # (필드, 배율, 소수자리)  배율: 원→억은 1e-8, 비율→%는 100
 FIELDS = [
@@ -142,21 +142,25 @@ def main(argv=None) -> int:
     print(f"  기준일 {asof_d}, 거래일 {len(panel['close'])}일, 종목 {len(last)}개, 권리변동 보정 {events}건")
 
     fund = pd.DataFrame()
-    if not a.demo and cfg.get("fundamentals", "naver") == "naver":
-        print("재무 데이터(네이버) 수집 중…")
-        try:
-            fund = naver.fundamentals(naver.NaverSource(cache / "naver"), list(last.index), last["shares"])
-        except Exception as e:
-            warnings.append(f"재무 수집 실패: {e}")
-            print(f"  경고: {e}")
-        dc = None
-    if dc is not None:
+    fin_src = {}
+    if dc is not None and cfg.get("fundamentals", "dart") == "dart":
         try:
             print("재무 데이터(DART) 수집 중…")
             fund = dart.load_fundamentals(dc, list(last.index), asof_d, cache / "dart")
+            fin_src["DART"] = int(len(fund))
         except Exception as e:  # 재무 실패해도 가격 기반 탭은 살린다
             warnings.append(f"DART 수집 실패: {e}")
             print(f"  경고: {e}")
+    if not a.demo:
+        missing = [c for c in last.index if c not in fund.index]
+        if missing:
+            print(f"DART에 없는 {len(missing)}종목은 네이버 재무로 채움…")
+            try:
+                nf = naver.fundamentals(naver.NaverSource(cache / "naver"), missing, last["shares"])
+                fin_src["네이버"] = int(len(nf))
+                fund = pd.concat([fund, nf]) if len(fund) else nf
+            except Exception as e:
+                warnings.append(f"네이버 재무 수집 실패: {e}")
 
     df = factors.compute(panel, last, fund, cfg)
     df = df.join(signals.compute(panel), how="left")
@@ -175,7 +179,7 @@ def main(argv=None) -> int:
         "n": int(len(df)), "sample": bool(a.demo), "fin_dist": fin_dist,
         "approx_ttm": int(df["fin"].fillna("").str.endswith("*").sum()),
         "warnings": warnings, "strats": tracker.STRATS, "horizons": list(tracker.HORIZONS),
-        "aplan": cfg["aplan"], "universe": cfg["universe"], "source": source, "fin_source": "DART" if a.demo or cfg.get("fundamentals") == "dart" else "네이버 증권(최근 4분기)",
+        "aplan": cfg["aplan"], "universe": cfg["universe"], "source": source, "fin_source": " · ".join(f"{k} {v}종목" for k, v in fin_src.items()) or "DART",
     }
     payload = build_payload(df, panel, meta, perf, recent)
     out = Path(a.out) / "data"
@@ -188,6 +192,8 @@ def main(argv=None) -> int:
         owner, repo = os.environ["GITHUB_REPOSITORY"].split("/")
         url = f"https://{owner.lower()}.github.io/{repo}/"
     text = alert_text(df, asof_d.isoformat(), cfg["alert_top_n"], url)
+    if not a.demo and not a.no_telegram:
+        ntfy.send(f"환동퀀트 {asof_d.isoformat()}", text.split("\n", 1)[1].strip(), click=url, tags=["chart_with_upwards_trend"])
     tok, chat = os.environ.get("TELEGRAM_BOT_TOKEN"), os.environ.get("TELEGRAM_CHAT_ID")
     if tok and chat and not a.no_telegram and not a.demo:
         telegram.send(text, tok, chat)

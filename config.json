@@ -12,7 +12,8 @@
     "smallcap_quantile": 0.2,
     "mom_n": 7
   },
-  "fundamentals": "naver",
+  "fundamentals": "dart",
+  "ntfy_topic": "hwandong-quant-67631we5vw",
   "alert_top_n": 5,
   "track_top_n": 20
 }

@@ -43,6 +43,10 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python -u -m pipeline.main
 
+      - name: 실패 알림 (ntfy)
+        if: failure()
+        run: python -m pipeline.ntfy "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
       - name: 캐시 저장
         if: always()
         uses: actions/cache/save@v4
