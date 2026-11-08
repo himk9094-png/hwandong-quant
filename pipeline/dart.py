@@ -60,7 +60,7 @@ class DartClient:
         last = None
         for i in range(4):
             try:
-                r = self.s.get(BASE + "fnlttMultiAcnt.json", params=params, timeout=60)
+                r = self.s.get(BASE + "fnlttMultiAcnt.json", params=params, timeout=30)
                 js = r.json()
             except (requests.RequestException, ValueError) as e:
                 last = e
@@ -164,7 +164,9 @@ def load_fundamentals(client, stock_codes: list[str], asof: dt.date, cache_dir: 
     if cc_path.exists() and (time.time() - cc_path.stat().st_mtime) < 7 * 86400:
         cc = json.loads(cc_path.read_text(encoding="utf-8"))
     if cc is None:
+        t0 = time.time()
         cc = client.corp_codes()
+        log(f"  DART 회사코드 {len(cc)}개 ({time.time() - t0:.0f}초)")
         cc_path.write_text(json.dumps(cc), encoding="utf-8")
 
     pairs = [(s, cc[s]) for s in stock_codes if s in cc]
@@ -179,13 +181,14 @@ def load_fundamentals(client, stock_codes: list[str], asof: dt.date, cache_dir: 
         if p.exists() and (time.time() - p.stat().st_mtime) < ttl:
             data[(y, r)] = json.loads(p.read_text(encoding="utf-8"))
             continue
+        t0 = time.time()
         with ThreadPoolExecutor(workers) as ex:
             parts = list(ex.map(lambda b: client.multi(b, y, r), batches))
         rows = [x for part in parts for x in part]
         parsed = parse_period(rows, r, {c: s for s, c in pairs})
         p.write_text(json.dumps(parsed, ensure_ascii=False), encoding="utf-8")
         data[(y, r)] = parsed
-        log(f"  DART {y} {r}: {len(parsed)}개사")
+        log(f"  DART {y} {r}: {len(parsed)}개사 ({time.time() - t0:.0f}초)")
 
     out = []
     for sc in stock_codes:

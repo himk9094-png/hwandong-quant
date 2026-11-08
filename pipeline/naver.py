@@ -36,18 +36,19 @@ class NaverSource:
         self.s = requests.Session()
         self.s.headers.update({"User-Agent": "Mozilla/5.0 (quant-dashboard)"})
         self.fetched = 0
+        self.done, self.errors, self.t0 = 0, [], time.time()
 
     def _get(self, url, **params):
         last = None
-        for i in range(4):
+        for i in range(3):
             try:
-                r = self.s.get(url, params=params, timeout=20)
+                r = self.s.get(url, params=params, timeout=10)
                 if r.status_code == 200:
                     return r
                 last = f"HTTP {r.status_code}"
             except requests.RequestException as e:
                 last = e
-            time.sleep(1.5 * (i + 1))
+            time.sleep(1 + i)
         raise NaverError(f"네이버 요청 실패 {url} {params}: {last}")
 
     def listing(self) -> pd.DataFrame:
@@ -79,6 +80,17 @@ class NaverSource:
             df[c] = pd.to_numeric(df[c], errors="coerce")
         return df
 
+    def history_safe(self, code: str):
+        try:
+            df = self.history(code)
+        except Exception as e:  # 한 종목 실패로 전체를 멈추지 않는다
+            df = None
+            self.errors.append(f"{code}: {e}")
+        self.done += 1
+        if self.done % 300 == 0:
+            print(f"  일봉 {self.done}종목 완료 ({time.time() - self.t0:.0f}초, 실패 {len(self.errors)})", flush=True)
+        return df
+
     def history(self, code: str) -> pd.DataFrame:
         """캐시가 있으면 최근 30일만 받아 이어 붙인다. 겹치는 날 가격이 다르면(액면분할 등으로 수정주가가 바뀜) 전부 다시 받는다."""
         p = self.dir / f"{code}.csv"
@@ -98,10 +110,20 @@ class NaverSource:
         return df
 
     def load(self, today: dt.date, log=print) -> tuple[pd.DataFrame, dt.date]:
+        t = time.time()
+        try:
+            self._chart("005930", 5)
+        except NaverError as e:
+            raise NaverError(f"네이버 시세 서버에 접속할 수 없습니다(이 서버에서 차단됐을 수 있음): {e}")
+        log(f"  네이버 접속 확인 ({time.time() - t:.1f}초)")
         lst = self.listing()
         codes = list(lst.index)
+        log(f"  종목 목록 {len(codes)}개 ({time.time() - t:.0f}초)")
+        self.done, self.errors, self.t0 = 0, [], time.time()
         with ThreadPoolExecutor(self.workers) as ex:
-            hists = list(ex.map(self.history, codes))
+            hists = list(ex.map(self.history_safe, codes))
+        if len(self.errors) > len(codes) * 0.3:
+            raise NaverError(f"일봉 실패가 너무 많습니다({len(self.errors)}/{len(codes)}). 예: {self.errors[:3]}")
         frames = []
         for code, h in zip(codes, hists):
             if h is None or h.empty:
@@ -128,5 +150,5 @@ class NaverSource:
         df["sect"] = ""
         # 거래정지 종목은 마지막 날 거래량 0으로 처리 → 유니버스에서 빠짐
         df.loc[df["halted"].fillna(False).astype(bool) & (df["date"] == asof_s), "vol"] = 0
-        log(f"  네이버 일봉 요청 {self.fetched}건, 종목 {len(codes)}개")
+        log(f"  네이버 일봉 요청 {self.fetched}건, 종목 {len(codes)}개, 실패 {len(self.errors)}개, {time.time() - t:.0f}초")
         return df[COLUMNS], dt.datetime.strptime(asof_s, "%Y%m%d").date()
