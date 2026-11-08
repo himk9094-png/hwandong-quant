@@ -48,7 +48,8 @@ def compute(panel: dict, rows: int = 300) -> pd.DataFrame:
         "골든크로스": _crossed_up(ma[20], ma[60]),
         "RSI반등": ((rsi >= 30) & (rsi.shift(1) < 30)).iloc[-K:].any(),
         "BB반등": ((c > lower) & (c.shift(1) < lower.shift(1))).iloc[-K:].any(),
-        "스토캐스틱": ((sk > sdl) & (sk.shift(1) <= sdl.shift(1)) & (sk.shift(1) < 25)).iloc[-K:].any(),
+        # 침체권(%K·%D 모두 20 미만)에서 %K가 %D를 상향돌파, 최근 2일 이내 — 느슨하면 급락장 다음날 수백 종목이 한꺼번에 뜸
+        "스토캐스틱": ((sk > sdl) & (sk.shift(1) <= sdl.shift(1)) & (sk.shift(1) < 20) & (sdl.shift(1) < 20)).iloc[-2:].any(),
         "신고가": last > c.shift(1).rolling(250, min_periods=200).max().iloc[-1],
         "거래량급증": (vr >= 3) & (ret1 >= 0.03),
     }
