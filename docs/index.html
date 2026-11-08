@@ -78,7 +78,7 @@ svg.spark{width:100%;height:90px;display:block}
   <nav class="tabs" id="tabs"></nav>
   <div class="filters" id="filters">
     <select id="fMkt"><option value="">전체 시장</option><option value="KOSPI">코스피</option><option value="KOSDAQ">코스닥</option></select>
-    <select id="fCap"><option value="0">시총 전체</option><option value="500">500억↑</option><option value="1000">1천억↑</option><option value="3000">3천억↑</option><option value="10000">1조↑</option></select>
+    <select id="fCap"><option value="">시총 전체</option><option value="0-1000">소형 1천억 미만</option><option value="1000-5000">중소형 1천억~5천억</option><option value="5000-20000">중형 5천억~2조</option><option value="20000-">대형 2조 이상</option></select>
     <select id="fTv"><option value="0">거래대금 전체</option><option value="5">일 5억↑</option><option value="20">일 20억↑</option><option value="100">일 100억↑</option></select>
     <button type="button" class="tgl" id="fSig" aria-pressed="false">매수신호만</button>
   </div>
@@ -110,7 +110,7 @@ function sortBy(f,asc){return function(a,b){var x=a[f],y=b[f];if(!nz(x))return 1
 
 var TABS=[
  {k:"total",l:"종합",d:"<b>밸류·퀄리티·모멘텀</b> 백분위 점수의 평균(0~100). 세 가지 모두 계산되는 종목만.",f:function(r){return nz(r.total)},s:sortBy("total"),c:[["종합","total","s"],["밸류","v","s"],["퀄리티","q","s"],["모멘텀","m","s"]]},
- {k:"aplan",l:"A안",d:"아침 리포트 규칙: 코스피, 시총 750억·주가 1,500원↑, 흑자. <b>마법공식</b>(EV/영업이익 낮고 ROA 높은 순) 8 + <b>소형모멘텀</b>(시총 작고 1년 수익률 높은 순) 7. 12위까지 후보 표시. DART 공시 제외 규칙은 아침 리포트에서 확인.",custom:"aplan",season:true},
+ {k:"aplan",l:"A안",d:"아침 리포트 규칙: 코스피, 시총 750억·주가 1,500원↑, 흑자. <b>마법공식</b>(EV/영업이익 낮고 ROA 높은 순, 순이익/영업이익 1.5 초과 제외) 8 + <b>소형모멘텀</b>(시총 작고 1년 수익률 높은 순) 7. 12위까지 후보 표시. DART 공시 제외 규칙은 아침 리포트에서 확인.",custom:"aplan",season:true},
  {k:"lmom",l:"대형 모멘텀",d:"코스피 <b>시총 상위 100</b> 중 12-1개월 수익률 순. 상위 10이 편입 대상. 백테스트: 11~4월 보유 시 20~23년 +10%/년, 23~26년 +37%/년.",f:function(r){return nz(r.lm)},s:sortBy("lm",true),rk:"lm",topN:10,c:[["12-1M","mom12","sp"],["6M","mom6","sp"],["52주고점","hi52","sp"],["시총","mcap","eok"]],season:true},
  {k:"lcombo",l:"대형 종합",d:"코스피 시총 상위 100 중 가치(PER·이익수익률)+질(ROA·ROE)+모멘텀(12-1·6-1개월) 평균 순. 상위 10 편입. 백테스트: 11~4월 보유 시 +9%/년, +36%/년.",f:function(r){return nz(r.lc)},s:sortBy("lc",true),rk:"lc",topN:10,c:[["PER","per","x"],["ROE","roe","p"],["12-1M","mom12","sp"],["시총","mcap","eok"]],season:true},
  {k:"lmf",l:"대형 마법공식",d:"코스피 시총 상위 100 중 이익수익률+ROA 순(흑자만). 상위 10 편입. 백테스트: 11~4월 보유 시 +5%/년, +25%/년 — 대형주에선 모멘텀보다 약함.",f:function(r){return nz(r.lf)},s:sortBy("lf",true),rk:"lf",topN:10,c:[["이익수익률","ey","p"],["ROA","roa","p"],["PER","per","x"],["시총","mcap","eok"]],season:true},
@@ -129,6 +129,7 @@ var TABS=[
 function rowCard(r,rank,t){
   var b=el("button","card");b.type="button";
   var a=el("div","row1");a.appendChild(el("span","rk",t.rk?r[t.rk]:rank));a.appendChild(el("span","nm",r.name));
+  if(r.hold){a.appendChild(el("span","chip st","보유"))}
   if(t.topN){a.appendChild(el("span","chip "+(r[t.rk]<=t.topN?"":"st"),r[t.rk]<=t.topN?"편입":"후보"))}
   a.appendChild(el("span","px",num(r.close)));var c=el("span","chg "+cls(r.chg),nz(r.chg)?(r.chg>0?"+":"")+r.chg.toFixed(2)+"%":"–");a.appendChild(c);b.appendChild(a);
   b.appendChild(el("div","sub",r.code+" · "+(r.mkt==="KOSPI"?"코스피":"코스닥")+" · 시총 "+F.eok(r.mcap)+(r.fin?" · 재무 "+r.fin:"")));
@@ -140,8 +141,9 @@ function rowCard(r,rank,t){
   return b;
 }
 function filt(r){
-  var mk=$("#fMkt").value,cap=+$("#fCap").value,tv=+$("#fTv").value;
-  return (!mk||r.mkt===mk)&&(!cap||(r.mcap||0)>=cap)&&(!tv||(r.tv20||0)>=tv)&&(!sigOnly||r.nsig>0);
+  var mk=$("#fMkt").value,cr=$("#fCap").value.split("-"),tv=+$("#fTv").value,mc=r.mcap||0;
+  var lo=cr[0]?+cr[0]:0,hi=cr[1]?+cr[1]:Infinity;
+  return (!mk||r.mkt===mk)&&(!$("#fCap").value||(mc>=lo&&mc<hi))&&(!tv||(r.tv20||0)>=tv)&&(!sigOnly||r.nsig>0);
 }
 function render(){
   var L=$("#list");L.innerHTML="";var t=TABS.find(function(x){return x.k===tab});

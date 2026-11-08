@@ -98,7 +98,10 @@ def compute(panel: dict, last: pd.DataFrame, fund: pd.DataFrame, cfg: dict) -> p
     k = df[df["mkt"] == a["market"]]
     ok = (k["mcap"] >= a["min_mcap_eok"] * EOK) & (k["close"] >= a["min_price"]) \
         & (val5.reindex(k.index) >= a["min_val5_eok"] * EOK) & (k["ni"] > 0)
-    g1ok = ok & (k["op"] > 0) & (k["mcap"] + k["liab"] > 0)
+    if a.get("max_mcap_eok"):
+        ok &= k["mcap"] <= a["max_mcap_eok"] * EOK
+    # 지배순이익/영업이익 > 1.5 제외 (지주사·일회성 이익)
+    g1ok = ok & (k["op"] > 0) & (k["mcap"] + k["liab"] > 0) & ~((k["ni"] / k["op"]) > 1.5)
     s1 = _pr(k["evop"][g1ok], False) + _pr(k["roa"][g1ok], True)      # EV/영업이익 낮고 ROA 높을수록
     mf_rank = s1.sort_values(ascending=False)
     g2ok = ok & k["r1y"].notna() & ~k.index.isin(mf_rank.index[: a["mf_n"]])
@@ -126,4 +129,6 @@ def compute(panel: dict, last: pd.DataFrame, fund: pd.DataFrame, cfg: dict) -> p
     put("lc", parts.mean(axis=1).where(parts.notna().sum(axis=1) >= 4))   # 대형 종합: 가치·질·모멘텀
     okb = (B["op"] > 0) & (B["ni"] > 0)
     put("lf", (_pr(B["ey"][okb]) + _pr(B["roa"][okb])))                  # 대형 마법공식: 이익수익률 + ROA
+    hold = cfg.get("holdings") or {}
+    df["hold"] = df.index.isin(list(hold)).astype(int)
     return df
