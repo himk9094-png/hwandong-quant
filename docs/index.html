@@ -108,7 +108,7 @@ function sortBy(f,asc){return function(a,b){var x=a[f],y=b[f];if(!nz(x))return 1
 var TABS=[
  {k:"total",l:"종합",d:"<b>밸류·퀄리티·모멘텀</b> 백분위 점수의 평균(0~100). 세 가지 모두 계산되는 종목만.",f:function(r){return nz(r.total)},s:sortBy("total"),c:[["종합","total","s"],["밸류","v","s"],["퀄리티","q","s"],["모멘텀","m","s"]]},
  {k:"aplan",l:"A안",d:"코스피 <b>마법공식 상위</b> + <b>소형주(시총 하위 20%) 12-1개월 모멘텀 상위</b>. 기존 A안 규칙의 근사치이며 DART 제외 규칙은 반영 전.",custom:"aplan"},
- {k:"mf",l:"마법공식",d:"<b>이익수익률</b>(영업이익 ÷ (시총+부채총계)) 순위와 <b>자본수익률 ROC</b>(영업이익 ÷ (순운전자본+비유동자산)) 순위의 합. 영업이익 적자·금융업 제외. 둘 다 근사식.",f:function(r){return nz(r.mf)},s:sortBy("mf",true),c:[["순위","mf","i"],["이익수익률","ey","p"],["ROC","roc","p"],["PER","per","x"]]},
+ {k:"mf",l:"마법공식",d:"<b>이익수익률</b>(영업이익 ÷ (시총+부채총계)) 순위와 <b>자본수익률 ROC</b>(영업이익 ÷ 총자산) 순위의 합. 영업이익 적자 제외. 둘 다 근사식.",f:function(r){return nz(r.mf)},s:sortBy("mf",true),c:[["순위","mf","i"],["이익수익률","ey","p"],["ROC","roc","p"],["PER","per","x"]]},
  {k:"value",l:"밸류",d:"이익/시총·순자산/시총·매출/시총·이익수익률의 백분위 평균. 높을수록 싸다.",f:function(r){return nz(r.v)},s:sortBy("v"),c:[["점수","v","s"],["PER","per","x"],["PBR","pbr","x"],["PSR","psr","x"]]},
  {k:"quality",l:"퀄리티",d:"ROE·ROA·영업이익률이 높고 부채비율이 낮을수록 높은 점수.",f:function(r){return nz(r.q)},s:sortBy("q"),c:[["점수","q","s"],["ROE","roe","p"],["영업이익률","opm","p"],["부채비율","debt","p"]]},
  {k:"mom",l:"모멘텀",d:"12-1개월·6-1개월·3개월 수익률 백분위 평균. 최근 1개월은 단기 되돌림 때문에 뺀다.",f:function(r){return nz(r.m)},s:sortBy("m"),c:[["점수","m","s"],["12-1M","mom12","sp"],["6M","mom6","sp"],["52주고점","hi52","sp"]]},
@@ -208,7 +208,7 @@ window.addEventListener("popstate",hide);
 function showInfo(){
   var M=D.meta,B=$("#sheetBody");B.innerHTML="";B.appendChild(el("div","sec","안내"));
   var fd=Object.keys(M.fin_dist||{}).map(function(k){return k+" "+M.fin_dist[k]+"개"}).join(", ");
-  [["기준일",M.asof+" 종가 (갱신 "+M.generated+")"],["유니버스",M.n+"종목 · 시총 "+M.universe.min_mcap_eok+"억↑ · 20일 평균 거래대금 "+M.universe.min_trdval20_eok+"억↑ · 우선주·스팩·리츠·관리종목 제외"],["재무 기준",fd||"없음"],["데이터","주가: "+(M.source||"KRX Open API")+" · 재무: DART Open API"]].forEach(function(x){var p=el("p","desc");var b=el("b",null,x[0]+" ");p.appendChild(b);p.appendChild(document.createTextNode(x[1]));B.appendChild(p)});
+  [["기준일",M.asof+" 종가 (갱신 "+M.generated+")"],["유니버스",M.n+"종목 · 시총 "+M.universe.min_mcap_eok+"억↑ · 20일 평균 거래대금 "+M.universe.min_trdval20_eok+"억↑ · 우선주·스팩·리츠·관리종목 제외"],["재무 기준",fd||"없음"],["데이터","주가: "+(M.source||"KRX Open API")+" · 재무: "+(M.fin_source||"DART")]].forEach(function(x){var p=el("p","desc");var b=el("b",null,x[0]+" ");p.appendChild(b);p.appendChild(document.createTextNode(x[1]));B.appendChild(p)});
   (M.warnings||[]).forEach(function(w){B.appendChild(el("p","banner",w))});
   B.appendChild(el("p","desc","모든 점수는 과거 데이터로 계산한 참고 지표이며 매수·매도 권유가 아닙니다. 전략 효과는 '성과' 탭에서 확인하세요."));
   show();

@@ -12,6 +12,7 @@
     "smallcap_quantile": 0.2,
     "mom_n": 7
   },
+  "fundamentals": "naver",
   "alert_top_n": 5,
   "track_top_n": 20
 }

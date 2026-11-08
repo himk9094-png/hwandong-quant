@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -20,6 +21,7 @@ from .krx import COLUMNS
 
 LIST_URL = "https://m.stock.naver.com/api/stocks/marketValue/{mkt}"
 CHART_URL = "https://fchart.stock.naver.com/sise.nhn"
+FIN_URL = "https://m.stock.naver.com/api/stock/{code}/finance/quarter"
 ITEM = re.compile(r'data="(\d{8})\|([\d.]+)\|([\d.]+)\|([\d.]+)\|([\d.]+)\|(\d+)"')
 HIST_COLS = ["date", "open", "high", "low", "close", "vol"]
 
@@ -158,3 +160,100 @@ class NaverSource:
         df.loc[df["halted"].fillna(False).astype(bool) & (df["date"] == asof_s), "vol"] = 0
         log(f"  네이버 일봉 요청 {self.fetched}건, 종목 {len(codes)}개, 실패 {len(self.errors)}개, {time.time() - t:.0f}초")
         return df[COLUMNS], dt.datetime.strptime(asof_s, "%Y%m%d").date()
+
+
+def _num(v):
+    if v is None:
+        return None
+    s = str(v).replace(",", "").strip()
+    if s in ("", "-", "N/A"):
+        return None
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def parse_fin(js: dict) -> dict | None:
+    """분기 재무(억원) → 최근 4분기 합(TTM) 매출·영업이익·순이익, 최근 분기 BPS·부채비율."""
+    fi = js.get("financeInfo") or {}
+    periods = [x["key"] for x in fi.get("trTitleList", []) if x.get("isConsensus") == "N"]
+    if not periods:
+        return None
+    rows = {r.get("title"): r.get("columns") or {} for r in fi.get("rowList", [])}
+
+    def val(title, key):
+        return _num((rows.get(title, {}).get(key) or {}).get("value"))
+
+    last4 = periods[-4:]
+    rec = {}
+    approx = False
+    for f, titles in (("rev", ("매출액",)), ("op", ("영업이익",)), ("ni", ("지배주주순이익", "당기순이익"))):
+        vals = None
+        for t in titles:
+            v = [val(t, k) for k in last4]
+            if sum(x is not None for x in v) >= 2:
+                vals = v
+                break
+        if vals is None:
+            rec[f] = None
+            continue
+        got = [x for x in vals if x is not None]
+        total = sum(got)
+        if len(got) < 4:
+            total = total * 4 / len(got)
+            approx = True
+        rec[f] = total * 1e8
+    latest = periods[-1]
+    rec["bps"] = val("BPS", latest)
+    rec["debt_ratio"] = val("부채비율", latest)
+    rec["fin"] = f"{latest[2:4]}.{(int(latest[4:6]) + 2) // 3}Q" + ("*" if approx else "")
+    return rec
+
+
+def _fin_one(src: "NaverSource", code: str, fin_dir: Path):
+    p = fin_dir / f"{code}.json"
+    try:
+        if p.exists() and time.time() - p.stat().st_mtime < 3 * 86400:
+            js = json.loads(p.read_text(encoding="utf-8"))
+        else:
+            js = src._get(FIN_URL.format(code=code)).json()
+            p.write_text(json.dumps(js, ensure_ascii=False), encoding="utf-8")
+        rec = parse_fin(js)
+    except Exception:
+        return None
+    if rec:
+        rec["code"] = code
+    return rec
+
+
+def fundamentals(src: "NaverSource", codes: list[str], shares: pd.Series, budget_sec: int = 480, log=print) -> pd.DataFrame:
+    fin_dir = src.dir.parent / "naver_fin"
+    fin_dir.mkdir(parents=True, exist_ok=True)
+    t0 = time.time()
+
+    def one(code):
+        if time.time() - t0 > budget_sec:
+            p = fin_dir / f"{code}.json"
+            if not p.exists():
+                return None
+            try:
+                rec = parse_fin(json.loads(p.read_text(encoding="utf-8")))
+            except Exception:
+                return None
+            if rec:
+                rec["code"] = code
+            return rec
+        return _fin_one(src, code, fin_dir)
+
+    with ThreadPoolExecutor(src.workers) as ex:
+        recs = [r for r in ex.map(one, codes) if r]
+    log(f"  네이버 재무 {len(recs)}/{len(codes)}종목 ({time.time() - t0:.0f}초)")
+    if not recs:
+        return pd.DataFrame()
+    df = pd.DataFrame(recs).set_index("code")
+    sh = pd.to_numeric(shares.reindex(df.index), errors="coerce")
+    df["equity"] = df["bps"] * sh                          # 자본총계(근사) = BPS × 상장주식수
+    df["liab"] = df["debt_ratio"] / 100 * df["equity"]      # 부채총계 = 부채비율 × 자본
+    df["assets"] = df["equity"] + df["liab"]
+    return df[["fin", "rev", "op", "ni", "equity", "liab", "assets"]]

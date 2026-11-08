@@ -44,12 +44,15 @@ def compute(panel: dict, last: pd.DataFrame, fund: pd.DataFrame, cfg: dict) -> p
         df["fin"] = None
 
     m = df["mcap"]
+    bad_eq = (df["equity"] / m) > 20                          # 감자·재상장 등으로 BPS가 깨진 경우
+    df.loc[bad_eq, ["equity", "liab", "assets"]] = np.nan
     eq = _pos(df["equity"])
     df["per"] = m / _pos(df["ni"])
     df["pbr"] = m / eq
     df["psr"] = m / _pos(df["rev"])
     df["ey"] = df["op"] / (m + df["liab"])                  # 이익수익률(근사): 영업이익 / (시총 + 부채총계)
     ic = df["ca"] - df["cl"] + df["nca"]                     # 투하자본(근사): 순운전자본 + 비유동자산
+    ic = ic.where(ic.notna(), df["assets"])                   # 상세 계정이 없으면 총자산
     df["roc"] = df["op"] / ic.where(ic > 0)
     df["roe"] = df["ni"] / eq
     df["roa"] = df["ni"] / _pos(df["assets"])

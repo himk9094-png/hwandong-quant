@@ -142,6 +142,14 @@ def main(argv=None) -> int:
     print(f"  기준일 {asof_d}, 거래일 {len(panel['close'])}일, 종목 {len(last)}개, 권리변동 보정 {events}건")
 
     fund = pd.DataFrame()
+    if not a.demo and cfg.get("fundamentals", "naver") == "naver":
+        print("재무 데이터(네이버) 수집 중…")
+        try:
+            fund = naver.fundamentals(naver.NaverSource(cache / "naver"), list(last.index), last["shares"])
+        except Exception as e:
+            warnings.append(f"재무 수집 실패: {e}")
+            print(f"  경고: {e}")
+        dc = None
     if dc is not None:
         try:
             print("재무 데이터(DART) 수집 중…")
@@ -167,7 +175,7 @@ def main(argv=None) -> int:
         "n": int(len(df)), "sample": bool(a.demo), "fin_dist": fin_dist,
         "approx_ttm": int(df["fin"].fillna("").str.endswith("*").sum()),
         "warnings": warnings, "strats": tracker.STRATS, "horizons": list(tracker.HORIZONS),
-        "aplan": cfg["aplan"], "universe": cfg["universe"], "source": source,
+        "aplan": cfg["aplan"], "universe": cfg["universe"], "source": source, "fin_source": "DART" if a.demo or cfg.get("fundamentals") == "dart" else "네이버 증권(최근 4분기)",
     }
     payload = build_payload(df, panel, meta, perf, recent)
     out = Path(a.out) / "data"
