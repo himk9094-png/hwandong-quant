@@ -1,0 +1,74 @@
+name: daily
+
+on:
+  schedule:
+    - cron: "37 23 * * 0-4"   # 한국시간 월~금 08:37 (KRX가 08:00에 전 거래일 데이터 갱신)
+  workflow_dispatch:           # Actions 탭에서 수동 실행
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: daily
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: 캐시 복원 (주가·재무)
+        uses: actions/cache/restore@v4
+        with:
+          path: cache
+          key: data-${{ github.run_id }}
+          restore-keys: data-
+
+      - name: 계산
+        env:
+          KRX_API_KEY: ${{ secrets.KRX_API_KEY }}
+          DART_API_KEY: ${{ secrets.DART_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python -m pipeline.main
+
+      - name: 캐시 저장
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: cache
+          key: data-${{ github.run_id }}
+
+      - name: 추천 기록 커밋 (성과 추적용)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add history/picks.csv
+          git commit -m "기록 $(TZ=Asia/Seoul date +%F)" || echo "변경 없음"
+          git pull --rebase && git push
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: docs
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4
