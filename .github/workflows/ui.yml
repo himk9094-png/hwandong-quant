@@ -32,6 +32,9 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    concurrency:
+      group: pages-deploy        # 여러 작업이 동시에 배포하다 충돌하지 않게 한 줄로 세움
+      cancel-in-progress: false
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
