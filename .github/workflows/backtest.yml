@@ -1,0 +1,73 @@
+name: backtest
+
+# 매월 2일 새벽 03:17(한국시간)에 백테스트를 다시 돌려 백테스트 탭 갱신
+on:
+  schedule:
+    - cron: "17 18 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: backtest
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: 캐시 복원
+        uses: actions/cache/restore@v4
+        with:
+          path: cache
+          key: bt-${{ github.run_id }}
+          restore-keys: |
+            bt-
+            data-
+      - name: 백테스트
+        env:
+          DART_API_KEY: ${{ secrets.DART_API_KEY }}
+        run: python -u -m backtest.run
+      - name: 캐시 저장
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: cache
+          key: bt-${{ github.run_id }}
+      - name: 결과 커밋
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/backtest.json
+          git commit -m "백테스트 갱신 $(TZ=Asia/Seoul date +%F)" || echo "변경 없음"
+          git pull --rebase && git push
+      - name: 현재 데이터 가져오기
+        run: |
+          mkdir -p docs/data
+          curl -sf "https://${GITHUB_REPOSITORY_OWNER,,}.github.io/${GITHUB_REPOSITORY#*/}/data/latest.json" -o docs/data/latest.json
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: docs
+      - name: 실패 알림 (ntfy)
+        if: failure()
+        run: python -m pipeline.ntfy "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4

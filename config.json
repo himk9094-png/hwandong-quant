@@ -1,9 +1,17 @@
 {
   "universe": {
-    "markets": ["KOSPI", "KOSDAQ"],
+    "markets": [
+      "KOSPI",
+      "KOSDAQ"
+    ],
     "min_mcap_eok": 300,
     "min_trdval20_eok": 2,
-    "exclude_name_keywords": ["스팩", "리츠", "REIT", "인프라"]
+    "exclude_name_keywords": [
+      "스팩",
+      "리츠",
+      "REIT",
+      "인프라"
+    ]
   },
   "history_calendar_days": 420,
   "aplan": {
@@ -17,5 +25,16 @@
   "fundamentals": "dart",
   "ntfy_topic": "hwandong-quant-67631we5vw",
   "alert_top_n": 5,
-  "track_top_n": 20
+  "track_top_n": 20,
+  "holdings": {
+    "439260": "대한조선",
+    "192080": "더블유게임즈",
+    "317450": "명인제약",
+    "019180": "티에이치엔",
+    "096760": "JW홀딩스",
+    "100840": "SNT에너지",
+    "004100": "태양금속",
+    "055490": "테이팩스",
+    "004960": "한신공영"
+  }
 }

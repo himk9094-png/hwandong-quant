@@ -38,7 +38,7 @@ class NaverSource:
         self.s = requests.Session()
         self.s.headers.update({"User-Agent": "Mozilla/5.0 (quant-dashboard)"})
         self.fetched = 0
-        self.done, self.errors, self.t0 = 0, [], time.time()
+        self.done, self.errors, self.t0, self.skipped = 0, [], time.time(), 0
 
     def _get(self, url, **params):
         last = None
