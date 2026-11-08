@@ -113,7 +113,9 @@ class DemoDart:
         out = []
         for cc in corp_codes:
             sc = cc[1:]
-            j = self.idx[sc]
+            j = self.idx.get(sc)
+            if j is None:
+                continue
             lag = 100 if nq == 4 else 46
             if j % 17 == 0:
                 lag += 30                                   # 늦게 공시하는 회사

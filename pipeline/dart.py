@@ -58,9 +58,9 @@ class DartClient:
         params = {"crtfc_key": self.key, "corp_code": ",".join(corp_codes),
                   "bsns_year": str(year), "reprt_code": reprt}
         last = None
-        for i in range(4):
+        for i in range(2):
             try:
-                r = self.s.get(BASE + "fnlttMultiAcnt.json", params=params, timeout=30)
+                r = self.s.get(BASE + "fnlttMultiAcnt.json", params=params, timeout=20)
                 js = r.json()
             except (requests.RequestException, ValueError) as e:
                 last = e
@@ -170,6 +170,10 @@ def load_fundamentals(client, stock_codes: list[str], asof: dt.date, cache_dir: 
         cc_path.write_text(json.dumps(cc), encoding="utf-8")
 
     pairs = [(s, cc[s]) for s in stock_codes if s in cc]
+    t0 = time.time()
+    client.multi(["00126380"], asof.year - 1, "11011")   # 접속 확인(삼성전자 1개사). 실패하면 여기서 예외
+    log(f"  DART 접속 확인 ({time.time() - t0:.1f}초)")
+    deadline = time.time() + 480
     corp_list = [c for _, c in pairs]
     batches = [corp_list[i:i + 100] for i in range(0, len(corp_list), 100)]
 
@@ -180,6 +184,10 @@ def load_fundamentals(client, stock_codes: list[str], asof: dt.date, cache_dir: 
         ttl = 2 * 86400 if idx < 2 else 20 * 86400
         if p.exists() and (time.time() - p.stat().st_mtime) < ttl:
             data[(y, r)] = json.loads(p.read_text(encoding="utf-8"))
+            continue
+        if time.time() > deadline:
+            log(f"  DART 시간 제한 — {y} {r} 건너뜀")
+            data[(y, r)] = json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
             continue
         t0 = time.time()
         with ThreadPoolExecutor(workers) as ex:

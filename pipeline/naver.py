@@ -29,10 +29,10 @@ class NaverError(RuntimeError):
 
 
 class NaverSource:
-    def __init__(self, cache_dir: Path, workers: int = 8, count: int = 320):
+    def __init__(self, cache_dir: Path, workers: int = 4, count: int = 320, budget_sec: int = 720):
         self.dir = Path(cache_dir)
         self.dir.mkdir(parents=True, exist_ok=True)
-        self.workers, self.count = workers, count
+        self.workers, self.count, self.budget = workers, count, budget_sec
         self.s = requests.Session()
         self.s.headers.update({"User-Agent": "Mozilla/5.0 (quant-dashboard)"})
         self.fetched = 0
@@ -40,9 +40,9 @@ class NaverSource:
 
     def _get(self, url, **params):
         last = None
-        for i in range(3):
+        for i in range(2):
             try:
-                r = self.s.get(url, params=params, timeout=10)
+                r = self.s.get(url, params=params, timeout=8)
                 if r.status_code == 200:
                     return r
                 last = f"HTTP {r.status_code}"
@@ -81,6 +81,10 @@ class NaverSource:
         return df
 
     def history_safe(self, code: str):
+        if time.time() - self.t0 > self.budget:       # 시간 초과: 남은 종목은 캐시만 사용
+            p = self.dir / f"{code}.csv"
+            self.skipped += 1
+            return pd.read_csv(p, dtype={"date": str}) if p.exists() else None
         try:
             df = self.history(code)
         except Exception as e:  # 한 종목 실패로 전체를 멈추지 않는다
@@ -119,9 +123,11 @@ class NaverSource:
         lst = self.listing()
         codes = list(lst.index)
         log(f"  종목 목록 {len(codes)}개 ({time.time() - t:.0f}초)")
-        self.done, self.errors, self.t0 = 0, [], time.time()
+        self.done, self.errors, self.t0, self.skipped = 0, [], time.time(), 0
         with ThreadPoolExecutor(self.workers) as ex:
             hists = list(ex.map(self.history_safe, codes))
+        if self.skipped:
+            log(f"  시간 제한으로 {self.skipped}종목은 이번에 못 받음(다음 실행에서 이어 받음)")
         if len(self.errors) > len(codes) * 0.3:
             raise NaverError(f"일봉 실패가 너무 많습니다({len(self.errors)}/{len(codes)}). 예: {self.errors[:3]}")
         frames = []
