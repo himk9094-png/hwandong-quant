@@ -81,10 +81,6 @@ def alert_text(df: pd.DataFrame, asof: str, n: int, url: str | None) -> str:
     mf = df["mf"].dropna().sort_values().index[:n]
     L.append("\n[마법공식 상위]")
     L += [f"{i + 1}. {nm(c)}" for i, c in enumerate(mf)]
-    if df["amf"].notna().any():
-        L.append("\n[A안 후보]")
-        L.append("마법공식: " + ", ".join(nm(c) for c in df[df["amf"] <= 8].sort_values("amf").index))
-        L.append("소형모멘텀: " + ", ".join(nm(c) for c in df[df["asm"] <= 7].sort_values("asm").index))
     if df["lm"].notna().any():
         L.append("\n[대형 모멘텀 10]")
         L.append(", ".join(nm(c) for c in df[df["lm"] <= 10].sort_values("lm").index))

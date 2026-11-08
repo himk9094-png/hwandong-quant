@@ -110,7 +110,6 @@ function sortBy(f,asc){return function(a,b){var x=a[f],y=b[f];if(!nz(x))return 1
 
 var TABS=[
  {k:"total",l:"종합",d:"<b>밸류·퀄리티·모멘텀</b> 백분위 점수의 평균(0~100). 세 가지 모두 계산되는 종목만.",f:function(r){return nz(r.total)},s:sortBy("total"),c:[["종합","total","s"],["밸류","v","s"],["퀄리티","q","s"],["모멘텀","m","s"]]},
- {k:"aplan",l:"A안",d:"아침 리포트 규칙: 코스피, 시총 750억·주가 1,500원↑, 흑자. <b>마법공식</b>(EV/영업이익 낮고 ROA 높은 순, 순이익/영업이익 1.5 초과 제외) 8 + <b>소형모멘텀</b>(코스피 시총 하위 20% 안에서 시총 작고 1년 수익률 높은 순) 7. 12위까지 후보 표시. DART 공시 제외 규칙은 아침 리포트에서 확인.",custom:"aplan",season:true},
  {k:"lmom",l:"대형 모멘텀",d:"코스피 <b>시총 상위 100</b> 중 12-1개월 수익률 순. 상위 10이 편입 대상. 백테스트: 11~4월 보유 시 20~23년 +10%/년, 23~26년 +37%/년.",f:function(r){return nz(r.lm)},s:sortBy("lm",true),rk:"lm",topN:10,c:[["12-1M","mom12","sp"],["6M","mom6","sp"],["52주고점","hi52","sp"],["시총","mcap","eok"]],season:true},
  {k:"lcombo",l:"대형 종합",d:"코스피 시총 상위 100 중 가치(PER·이익수익률)+질(ROA·ROE)+모멘텀(12-1·6-1개월) 평균 순. 상위 10 편입. 백테스트: 11~4월 보유 시 +9%/년, +36%/년.",f:function(r){return nz(r.lc)},s:sortBy("lc",true),rk:"lc",topN:10,c:[["PER","per","x"],["ROE","roe","p"],["12-1M","mom12","sp"],["시총","mcap","eok"]],season:true},
  {k:"lmf",l:"대형 마법공식",d:"코스피 시총 상위 100 중 이익수익률+ROA 순(흑자만). 상위 10 편입. 백테스트: 11~4월 보유 시 +5%/년, +25%/년 — 대형주에선 모멘텀보다 약함.",f:function(r){return nz(r.lf)},s:sortBy("lf",true),rk:"lf",topN:10,c:[["이익수익률","ey","p"],["ROA","roa","p"],["PER","per","x"],["시총","mcap","eok"]],season:true},
