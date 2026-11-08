@@ -12,6 +12,7 @@ import pandas as pd
 STRATS = {
     "total": "종합 상위", "aplan": "A안 후보", "mf": "마법공식", "value": "밸류",
     "quality": "퀄리티", "mom": "모멘텀", "signal": "매수신호", "surge": "급등후보",
+    "lmom": "대형 모멘텀10", "lcombo": "대형 종합10", "lmf": "대형 마법공식10", "size": "시총 상위20",
 }
 HORIZONS = (5, 20, 60)
 COLS = ["date", "strat", "code", "name", "close"]
@@ -22,7 +23,9 @@ def picks(df: pd.DataFrame, n: int) -> dict[str, list[str]]:
     sig = df[df["nsig"] >= 1].sort_values(["nsig", "total"], ascending=[False, False], na_position="last")
     return {
         "total": top("total"), "mf": top("mf", True), "value": top("v"), "quality": top("q"),
-        "mom": top("m"), "aplan": list(df.index[df["ag"] != ""]),
+        "mom": top("m"),
+        "aplan": list(df.index[(df["amf"] <= 8) | (df["asm"] <= 7)]),
+        "lmom": top("lm", True)[:10], "lcombo": top("lc", True)[:10], "lmf": top("lf", True)[:10], "size": top("sz", True)[:20],
         "signal": list(sig.index[:50]), "surge": top("surge"),
     }
 

@@ -4,6 +4,9 @@ on:
   schedule:
     - cron: "37 23 * * 0-4"   # 한국시간 월~금 08:37 (KRX가 08:00에 전 거래일 데이터 갱신)
   workflow_dispatch:           # Actions 탭에서 수동 실행
+  push:                        # 계산 코드가 바뀌면 바로 다시 계산(알림은 안 보냄)
+    branches: [main]
+    paths: ["pipeline/**", "config.json"]
 
 permissions:
   contents: write
@@ -41,7 +44,7 @@ jobs:
           DART_API_KEY: ${{ secrets.DART_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python -u -m pipeline.main
+        run: python -u -m pipeline.main ${{ github.event_name != 'schedule' && '--no-telegram' || '' }}
 
       - name: 실패 알림 (ntfy)
         if: failure()

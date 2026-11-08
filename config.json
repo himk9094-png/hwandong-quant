@@ -9,8 +9,10 @@
   "aplan": {
     "market": "KOSPI",
     "mf_n": 8,
-    "smallcap_quantile": 0.2,
-    "mom_n": 7
+    "mom_n": 7,
+    "min_mcap_eok": 750,
+    "min_price": 1500,
+    "min_val5_eok": 0.3
   },
   "fundamentals": "dart",
   "ntfy_topic": "hwandong-quant-67631we5vw",

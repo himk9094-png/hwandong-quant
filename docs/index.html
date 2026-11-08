@@ -110,7 +110,11 @@ function sortBy(f,asc){return function(a,b){var x=a[f],y=b[f];if(!nz(x))return 1
 
 var TABS=[
  {k:"total",l:"종합",d:"<b>밸류·퀄리티·모멘텀</b> 백분위 점수의 평균(0~100). 세 가지 모두 계산되는 종목만.",f:function(r){return nz(r.total)},s:sortBy("total"),c:[["종합","total","s"],["밸류","v","s"],["퀄리티","q","s"],["모멘텀","m","s"]]},
- {k:"aplan",l:"A안",d:"코스피 <b>마법공식 상위</b> + <b>소형주(시총 하위 20%) 12-1개월 모멘텀 상위</b>. 기존 A안 규칙의 근사치이며 DART 제외 규칙은 반영 전.",custom:"aplan"},
+ {k:"aplan",l:"A안",d:"아침 리포트 규칙: 코스피, 시총 750억·주가 1,500원↑, 흑자. <b>마법공식</b>(EV/영업이익 낮고 ROA 높은 순) 8 + <b>소형모멘텀</b>(시총 작고 1년 수익률 높은 순) 7. 12위까지 후보 표시. DART 공시 제외 규칙은 아침 리포트에서 확인.",custom:"aplan",season:true},
+ {k:"lmom",l:"대형 모멘텀",d:"코스피 <b>시총 상위 100</b> 중 12-1개월 수익률 순. 상위 10이 편입 대상. 백테스트: 11~4월 보유 시 20~23년 +10%/년, 23~26년 +37%/년.",f:function(r){return nz(r.lm)},s:sortBy("lm",true),rk:"lm",topN:10,c:[["12-1M","mom12","sp"],["6M","mom6","sp"],["52주고점","hi52","sp"],["시총","mcap","eok"]],season:true},
+ {k:"lcombo",l:"대형 종합",d:"코스피 시총 상위 100 중 가치(PER·이익수익률)+질(ROA·ROE)+모멘텀(12-1·6-1개월) 평균 순. 상위 10 편입. 백테스트: 11~4월 보유 시 +9%/년, +36%/년.",f:function(r){return nz(r.lc)},s:sortBy("lc",true),rk:"lc",topN:10,c:[["PER","per","x"],["ROE","roe","p"],["12-1M","mom12","sp"],["시총","mcap","eok"]],season:true},
+ {k:"lmf",l:"대형 마법공식",d:"코스피 시총 상위 100 중 이익수익률+ROA 순(흑자만). 상위 10 편입. 백테스트: 11~4월 보유 시 +5%/년, +25%/년 — 대형주에선 모멘텀보다 약함.",f:function(r){return nz(r.lf)},s:sortBy("lf",true),rk:"lf",topN:10,c:[["이익수익률","ey","p"],["ROA","roa","p"],["PER","per","x"],["시총","mcap","eok"]],season:true},
+ {k:"size",l:"시총 상위",d:"코스피 시가총액 순. 상위 20 동일비중이 비교 기준. 백테스트: 11~4월 보유 시 +11%/년, +17%/년.",f:function(r){return nz(r.sz)},s:sortBy("sz",true),rk:"sz",topN:20,c:[["시총","mcap","eok"],["PER","per","x"],["12-1M","mom12","sp"],["종합","total","s"]],season:true},
  {k:"mf",l:"마법공식",d:"<b>이익수익률</b>(영업이익 ÷ (시총+부채총계)) 순위와 <b>자본수익률 ROC</b>(영업이익 ÷ 총자산) 순위의 합. 영업이익 적자 제외. 둘 다 근사식.",f:function(r){return nz(r.mf)},s:sortBy("mf",true),c:[["순위","mf","i"],["이익수익률","ey","p"],["ROC","roc","p"],["PER","per","x"]]},
  {k:"value",l:"밸류",d:"이익/시총·순자산/시총·매출/시총·이익수익률의 백분위 평균. 높을수록 싸다.",f:function(r){return nz(r.v)},s:sortBy("v"),c:[["점수","v","s"],["PER","per","x"],["PBR","pbr","x"],["PSR","psr","x"]]},
  {k:"quality",l:"퀄리티",d:"ROE·ROA·영업이익률이 높고 부채비율이 낮을수록 높은 점수.",f:function(r){return nz(r.q)},s:sortBy("q"),c:[["점수","q","s"],["ROE","roe","p"],["영업이익률","opm","p"],["부채비율","debt","p"]]},
@@ -118,12 +122,14 @@ var TABS=[
  {k:"signal",l:"매수신호",d:"최근 3거래일 안에 생긴 <b>기술적 매수신호</b>(종가 기준): 20/60 골든크로스, RSI 30 상향돌파, 볼린저 하단 복귀, 스토캐스틱 침체권(20 미만) 골든, 52주 신고가, 거래량 급증(3배+, +3%↑).",f:function(r){return r.nsig>0},s:function(a,b){return (b.nsig-a.nsig)||sortBy("total")(a,b)},c:[["RSI","rsi","i"],["이격도","disp","x"],["종합","total","s"]],chips:true},
  {k:"surge",l:"급등후보",d:"거래량 급증·20일 고점 돌파·밴드 수축 후 확장·RSI 강세·당일 상승폭으로 매긴 점수. <b>참고용 — 검증 전</b>. 성과 탭에서 실제 결과를 확인하세요.",f:function(r){return r.surge>0},s:sortBy("surge"),c:[["점수","surge","i"],["거래량","vr","xv"],["RSI","rsi","i"],["20일평균거래대금","tv20","eok"]],chips:true},
  {k:"perf",l:"성과",custom:"perf"},
+ {k:"bt",l:"백테스트",custom:"bt"},
  {k:"search",l:"검색",custom:"search"}
 ];
 
 function rowCard(r,rank,t){
   var b=el("button","card");b.type="button";
-  var a=el("div","row1");a.appendChild(el("span","rk",rank));a.appendChild(el("span","nm",r.name));
+  var a=el("div","row1");a.appendChild(el("span","rk",t.rk?r[t.rk]:rank));a.appendChild(el("span","nm",r.name));
+  if(t.topN){a.appendChild(el("span","chip "+(r[t.rk]<=t.topN?"":"st"),r[t.rk]<=t.topN?"편입":"후보"))}
   a.appendChild(el("span","px",num(r.close)));var c=el("span","chg "+cls(r.chg),nz(r.chg)?(r.chg>0?"+":"")+r.chg.toFixed(2)+"%":"–");a.appendChild(c);b.appendChild(a);
   b.appendChild(el("div","sub",r.code+" · "+(r.mkt==="KOSPI"?"코스피":"코스닥")+" · 시총 "+F.eok(r.mcap)+(r.fin?" · 재무 "+r.fin:"")));
   var m=el("div","mets");
@@ -139,11 +145,13 @@ function filt(r){
 }
 function render(){
   var L=$("#list");L.innerHTML="";var t=TABS.find(function(x){return x.k===tab});
-  $("#filters").style.display=t.custom==="perf"?"none":"flex";
+  $("#filters").style.display=(t.custom==="perf"||t.custom==="bt")?"none":"flex";
   ["#fMkt","#fCap","#fTv"].forEach(function(s){$(s).style.display=t.custom==="aplan"?"none":""});
   var d=el("p","desc");d.innerHTML=t.d||"";if(t.d)L.appendChild(d);
+  if(t.season&&D){var mo=+D.meta.asof.slice(5,7),on=(mo>=11||mo<=4);var bn=el("div","banner",on?"지금은 보유 구간(11~4월)입니다. 백테스트 기준: 11월 초 매수 → 2월 초 교체 → 5월 초 매도.":"지금은 쉬는 구간(5~10월)입니다. 백테스트 기준 11월 초에 매수합니다.");bn.style.margin="0 0 10px";L.appendChild(bn)}
   if(t.custom==="aplan")return renderA(L,t);
   if(t.custom==="perf")return renderPerf(L);
+  if(t.custom==="bt")return renderBT(L);
   if(t.custom==="search")return renderSearch(L);
   var rows=R.filter(function(r){return t.f(r)&&filt(r)}).sort(t.s);
   L.appendChild(el("div","small",rows.length+"종목"));
@@ -152,11 +160,12 @@ function render(){
   if(rows.length>shown){var m=el("button","more","더 보기 ("+(rows.length-shown)+")");m.onclick=function(){shown+=50;render()};L.appendChild(m)}
 }
 function renderA(L,t){
-  [["MF","마법공식 상위 "+D.meta.aplan.mf_n],["SM","소형주 모멘텀 상위 "+D.meta.aplan.mom_n]].forEach(function(g){
+  [["amf","마법공식 (상위 "+D.meta.aplan.mf_n+" 편입)",D.meta.aplan.mf_n,[["EV/영업이익","evop","x"],["ROA","roa","p"],["PER","per","x"]]],
+   ["asm","소형모멘텀 (상위 "+D.meta.aplan.mom_n+" 편입)",D.meta.aplan.mom_n,[["1년","r1y","sp"],["시총","mcap","eok"],["3M","mom3","sp"]]]].forEach(function(g){
     L.appendChild(el("div","sec",g[1]));
-    var rows=R.filter(function(r){return r.ag===g[0]&&(!sigOnly||r.nsig>0)}).sort(sortBy("ar",true));
+    var rows=R.filter(function(r){return nz(r[g[0]])&&(!sigOnly||r.nsig>0)}).sort(sortBy(g[0],true));
     if(!rows.length)L.appendChild(el("div","empty","후보 없음 (재무 데이터 확인 필요)"));
-    var tt=g[0]==="MF"?{c:[["MF순위","ar","i"],["이익수익률","ey","p"],["ROC","roc","p"]]}:{c:[["12-1M","mom12","sp"],["3M","mom3","sp"],["시총","mcap","eok"]]};
+    var tt={rk:g[0],topN:g[2],c:g[3]};
     rows.forEach(function(r,i){L.appendChild(rowCard(r,i+1,tt))});
   });
 }
@@ -183,6 +192,21 @@ function renderPerf(L){
     rc.slice(0,80).forEach(function(x){var tr=el("tr");var a=el("td");a.appendChild(el("div",null,x[3]));a.appendChild(el("div","small",x[0].slice(4,6)+"/"+x[0].slice(6)+" · "+x[2]));tr.appendChild(a);tr.appendChild(el("td","small",M.strats[x[1]]||x[1]));tr.appendChild(el("td",cls(x[4]),F.sp(x[4])));t2.appendChild(tr)});
     L.appendChild(t2)}
 }
+function renderBT(L){
+  var box=el("div");L.appendChild(box);
+  function draw(B){
+    box.innerHTML="";box.appendChild(el("p","desc",B.note));
+    B.sections.forEach(function(s){
+      box.appendChild(el("div","sec",s.title));if(s.note)box.appendChild(el("p","desc",s.note));
+      var w=el("div");w.style.overflowX="auto";var tb=el("table"),hr=el("tr");s.cols.forEach(function(c){hr.appendChild(el("th",null,c))});tb.appendChild(hr);
+      s.rows.forEach(function(r){var tr=el("tr");r.forEach(function(v,i){var td=el("td");if(i&&String(v).indexOf("|")>0){var q=String(v).split("|");td.appendChild(el("div",cls(parseFloat(q[0].replace(/[^0-9.+-]/g,""))),q[0]));td.appendChild(el("div","small",q[1]))}else td.textContent=v;tr.appendChild(td)});tb.appendChild(tr)});
+      w.appendChild(tb);box.appendChild(w)});
+    box.appendChild(el("div","sec","주의"));B.caveats.forEach(function(x){box.appendChild(el("p","desc","· "+x))});
+  }
+  if(window.__BT__)return draw(window.__BT__);
+  box.appendChild(el("div","empty","불러오는 중…"));
+  fetch("backtest.json?t="+Date.now()).then(function(r){return r.json()}).then(function(B){window.__BT__=B;draw(B)}).catch(function(){box.innerHTML="";box.appendChild(el("div","empty","백테스트 결과를 불러오지 못했습니다."))});
+}
 function spark(code){
   var s=(D.spark||{})[code];if(!s||s.length<5)return el("div","small","차트는 상위권 종목만 저장됩니다.");
   var w=600,h=90,mn=Math.min.apply(null,s),mx=Math.max.apply(null,s),rg=mx-mn||1;
@@ -199,7 +223,7 @@ function openSheet(r){
   [["종합","total"],["밸류","v"],["퀄리티","q"],["모멘텀","m"]].forEach(function(x){var br=el("div","brow");br.appendChild(el("span",null,x[0]));var bar=el("div","bar"),i=el("i");i.style.width=(r[x[1]]||0)+"%";bar.appendChild(i);br.appendChild(bar);br.appendChild(el("span",null,F.s(r[x[1]])));B.appendChild(br)});
   if(r.sig||r.st){var cw=el("div");cw.style.margin="8px 0";(r.sig||"").split("|").filter(Boolean).forEach(function(s){cw.appendChild(el("span","chip",s))});(r.st||"").split("|").filter(Boolean).forEach(function(s){cw.appendChild(el("span","chip st",s))});B.appendChild(cw)}
   var g=el("div","grid");
-  [["PER","per","x"],["PBR","pbr","x"],["PSR","psr","x"],["ROE","roe","p"],["ROA","roa","p"],["영업이익률","opm","p"],["부채비율","debt","p"],["이익수익률","ey","p"],["ROC","roc","p"],["마법공식","mf","i"],["12-1M","mom12","sp"],["6M","mom6","sp"],["3M","mom3","sp"],["52주고점","hi52","sp"],["RSI","rsi","i"],["이격도(20)","disp","x"],["거래량배수","vr","xv"],["급등점수","surge","i"]].forEach(function(x){var c=el("div","cell");c.appendChild(el("div","k",x[0]));c.appendChild(el("div","v "+(x[2]==="sp"?cls(r[x[1]]):""),F[x[2]](r[x[1]])));g.appendChild(c)});
+  [["PER","per","x"],["PBR","pbr","x"],["PSR","psr","x"],["ROE","roe","p"],["ROA","roa","p"],["영업이익률","opm","p"],["부채비율","debt","p"],["이익수익률","ey","p"],["ROC","roc","p"],["마법공식","mf","i"],["12-1M","mom12","sp"],["6M","mom6","sp"],["3M","mom3","sp"],["52주고점","hi52","sp"],["RSI","rsi","i"],["이격도(20)","disp","x"],["거래량배수","vr","xv"],["급등점수","surge","i"],["1년","r1y","sp"],["EV/영업이익","evop","x"],["시총순위","sz","i"]].forEach(function(x){var c=el("div","cell");c.appendChild(el("div","k",x[0]));c.appendChild(el("div","v "+(x[2]==="sp"?cls(r[x[1]]):""),F[x[2]](r[x[1]])));g.appendChild(c)});
   B.appendChild(g);
   B.appendChild(el("div","small","재무 기준: "+(r.fin||"없음")+(r.fin&&r.fin.slice(-1)==="*"?" (*연환산 근사)":"")+" · 손익은 최근 4분기 합(TTM)"));
   var lk=el("div","links");[["네이버증권","https://m.stock.naver.com/domestic/stock/"+r.code+"/total"],["토스증권","https://tossinvest.com/stocks/A"+r.code]].forEach(function(x){var a=el("a",null,x[0]);a.href=x[1];a.target="_blank";a.rel="noopener";lk.appendChild(a)});B.appendChild(lk);

@@ -27,7 +27,8 @@ FIELDS = [
     ("mom12", 100, 1), ("mom6", 100, 1), ("mom3", 100, 1), ("hi52", 100, 1),
     ("rsi", 1, 0), ("disp", 1, 1), ("v", 1, 0), ("q", 1, 0), ("m", 1, 0), ("total", 1, 0),
     ("mf", 1, 0), ("sig", None, None), ("st", None, None), ("nsig", 1, 0), ("vr", 1, 1),
-    ("surge", 1, 0), ("ag", None, None), ("ar", 1, 0),
+    ("surge", 1, 0), ("r1y", 100, 1), ("evop", 1, 1), ("amf", 1, 0), ("asm", 1, 0),
+    ("lm", 1, 0), ("lc", 1, 0), ("lf", 1, 0), ("sz", 1, 0),
 ]
 
 
@@ -54,7 +55,9 @@ def build_payload(df, panel, meta, perf, recent):
     rows = [list(t) for t in zip(*[data[c] for c in cols])]
 
     d = df.set_index("code")
-    spark_codes = set(d.index[d["ag"] != ""]) | set(d.index[d["nsig"] >= 1])
+    spark_codes = set(d.index[d["amf"].notna() | d["asm"].notna()]) | set(d.index[d["nsig"] >= 1])
+    for col in ("lm", "lc", "lf", "sz"):
+        spark_codes |= set(d.index[d[col] <= 30])
     for col, asc in (("total", False), ("mf", True), ("v", False), ("q", False), ("m", False), ("surge", False)):
         spark_codes |= set(d[col].dropna().sort_values(ascending=asc).index[:60])
     c = panel["close"].iloc[-120:].ffill(limit=5)
@@ -78,11 +81,13 @@ def alert_text(df: pd.DataFrame, asof: str, n: int, url: str | None) -> str:
     mf = df["mf"].dropna().sort_values().index[:n]
     L.append("\n[마법공식 상위]")
     L += [f"{i + 1}. {nm(c)}" for i, c in enumerate(mf)]
-    a = df[df["ag"] != ""]
-    if len(a):
+    if df["amf"].notna().any():
         L.append("\n[A안 후보]")
-        L.append("MF: " + ", ".join(nm(c) for c in a[a["ag"] == "MF"].sort_values("ar").index))
-        L.append("SM: " + ", ".join(nm(c) for c in a[a["ag"] == "SM"].sort_values("ar").index))
+        L.append("마법공식: " + ", ".join(nm(c) for c in df[df["amf"] <= 8].sort_values("amf").index))
+        L.append("소형모멘텀: " + ", ".join(nm(c) for c in df[df["asm"] <= 7].sort_values("asm").index))
+    if df["lm"].notna().any():
+        L.append("\n[대형 모멘텀 10]")
+        L.append(", ".join(nm(c) for c in df[df["lm"] <= 10].sort_values("lm").index))
     s2 = df[df["nsig"] >= 2].sort_values(["nsig", "total"], ascending=[False, False], na_position="last")
     L.append(f"\n[매수신호 2개 이상] {len(s2)}종목")
     L += [f"· {nm(c)}: {df.at[c, 'sig'].replace('|', ', ')}" for c in s2.index[:8]]
