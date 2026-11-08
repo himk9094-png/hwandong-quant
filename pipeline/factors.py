@@ -104,7 +104,10 @@ def compute(panel: dict, last: pd.DataFrame, fund: pd.DataFrame, cfg: dict) -> p
     g1ok = ok & (k["op"] > 0) & (k["mcap"] + k["liab"] > 0) & ~((k["ni"] / k["op"]) > 1.5)
     s1 = _pr(k["evop"][g1ok], False) + _pr(k["roa"][g1ok], True)      # EV/영업이익 낮고 ROA 높을수록
     mf_rank = s1.sort_values(ascending=False)
-    g2ok = ok & k["r1y"].notna() & ~k.index.isin(mf_rank.index[: a["mf_n"]])
+    # 소형모멘텀: 코스피 보통주 전체 중 시가총액 하위 20% 안에서만
+    allk = last[(last["mkt"] == a["market"]) & (last.index.str[-1] == "0") & ~last["name"].astype(str).str.contains("스팩|리츠")]
+    sm_cut = allk["mcap"].quantile(a.get("sm_quantile", 0.2))
+    g2ok = ok & (k["mcap"] <= sm_cut) & k["r1y"].notna() & ~k.index.isin(mf_rank.index[: a["mf_n"]])
     s2 = _pr(k["mcap"][g2ok], False) + _pr(k["r1y"][g2ok], True)       # 시총 작고 1년 수익률 높을수록
     sm_rank = s2.sort_values(ascending=False)
     df["amf"] = np.nan

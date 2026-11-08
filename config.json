@@ -19,6 +19,7 @@
     "mf_n": 8,
     "mom_n": 7,
     "min_mcap_eok": 750,
+    "sm_quantile": 0.2,
     "min_price": 1500,
     "min_val5_eok": 0.3
   },
