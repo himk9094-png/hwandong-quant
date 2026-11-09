@@ -70,6 +70,18 @@ th{color:var(--mut);font-weight:500}
 .links{display:flex;gap:8px;margin-top:12px}
 .links a{flex:1;text-align:center;padding:10px;border-radius:10px;background:var(--panel2);color:var(--fg);text-decoration:none;font-size:14px}
 svg.spark{width:100%;height:90px;display:block}
+svg.pfchart{width:100%;height:200px;display:block;margin-top:6px}
+.pfbar{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 10px}
+.pff{display:flex;align-items:center;gap:8px;margin:8px 0;font-size:13px;color:var(--mut)}
+.pff span{flex:1}
+.pff select,.pff input{width:auto;min-width:120px;max-width:58%;font-size:14px;padding:7px 8px}
+.pfrow{display:flex;align-items:center;gap:8px;margin:6px 0}
+.pfrow .nm{font-size:14px}
+.pfw{width:64px!important;padding:6px!important;font-size:14px!important}
+.pfhit{display:block;width:100%;text-align:left;padding:10px;margin:4px 0;border-radius:8px;border:1px solid var(--line);background:var(--panel2);font-size:14px}
+.pfsave{display:block;width:100%;margin:14px 0 4px;padding:12px;border-radius:10px;border:none;background:var(--acc);color:#16181d;font-weight:700;font-size:15px}
+.pfta{width:100%;height:90px;margin:8px 0;background:var(--panel2);color:var(--fg);border:1px solid var(--line);border-radius:8px;font-size:12px;padding:8px}
+.addpf{width:100%;margin-top:8px;padding:10px;border-radius:10px;border:1px solid var(--acc);background:none;color:var(--acc);font-weight:700;font-size:14px}
 </style>
 </head>
 <body>
@@ -120,6 +132,7 @@ var TABS=[
  {k:"mom",l:"모멘텀",d:"12-1개월·6-1개월·3개월 수익률 백분위 평균. 최근 1개월은 단기 되돌림 때문에 뺀다.",f:function(r){return nz(r.m)},s:sortBy("m"),c:[["점수","m","s"],["12-1M","mom12","sp"],["6M","mom6","sp"],["52주고점","hi52","sp"]]},
  {k:"signal",l:"매수신호",d:"최근 3거래일 안에 생긴 <b>기술적 매수신호</b>(종가 기준): 20/60 골든크로스, RSI 30 상향돌파, 볼린저 하단 복귀, 스토캐스틱 침체권(20 미만) 골든, 52주 신고가, 거래량 급증(3배+, +3%↑).",f:function(r){return r.nsig>0},s:function(a,b){return (b.nsig-a.nsig)||sortBy("total")(a,b)},c:[["RSI","rsi","i"],["이격도","disp","x"],["종합","total","s"]],chips:true},
  {k:"surge",l:"급등후보",d:"거래량 급증·20일 고점 돌파·밴드 수축 후 확장·RSI 강세·당일 상승폭으로 매긴 점수. <b>참고용 — 검증 전</b>. 성과 탭에서 실제 결과를 확인하세요.",f:function(r){return r.surge>0},s:sortBy("surge"),c:[["점수","surge","i"],["거래량","vr","xv"],["RSI","rsi","i"],["20일평균거래대금","tv20","eok"]],chips:true},
+ {k:"pf",l:"내 포트폴리오",custom:"pf"},
  {k:"perf",l:"성과",custom:"perf"},
  {k:"bt",l:"백테스트",custom:"bt"},
  {k:"search",l:"검색",custom:"search"}
@@ -146,11 +159,12 @@ function filt(r){
 }
 function render(){
   var L=$("#list");L.innerHTML="";var t=TABS.find(function(x){return x.k===tab});
-  $("#filters").style.display=(t.custom==="perf"||t.custom==="bt")?"none":"flex";
+  $("#filters").style.display=(t.custom==="perf"||t.custom==="bt"||t.custom==="pf")?"none":"flex";
   ["#fMkt","#fCap","#fTv"].forEach(function(s){$(s).style.display=t.custom==="aplan"?"none":""});
   var d=el("p","desc");d.innerHTML=t.d||"";if(t.d)L.appendChild(d);
   if(t.season&&D){var mo=+D.meta.asof.slice(5,7),on=(mo>=11||mo<=4);var bn=el("div","banner",on?"지금은 보유 구간(11~4월)입니다. 백테스트 기준: 11월 초 매수 → 2월 초 교체 → 5월 초 매도.":"지금은 쉬는 구간(5~10월)입니다. 백테스트 기준 11월 초에 매수합니다.");bn.style.margin="0 0 10px";L.appendChild(bn)}
   if(t.custom==="aplan")return renderA(L,t);
+  if(t.custom==="pf")return window.PF?window.PF.render(L):L.appendChild(el("div","empty","불러오는 중…"));
   if(t.custom==="perf")return renderPerf(L);
   if(t.custom==="bt")return renderBT(L);
   if(t.custom==="search")return renderSearch(L);
@@ -228,6 +242,7 @@ function openSheet(r){
   B.appendChild(g);
   B.appendChild(el("div","small","재무 기준: "+(r.fin||"없음")+(r.fin&&r.fin.slice(-1)==="*"?" (*연환산 근사)":"")+" · 손익은 최근 4분기 합(TTM)"));
   var lk=el("div","links");[["네이버증권","https://m.stock.naver.com/domestic/stock/"+r.code+"/total"],["토스증권","https://tossinvest.com/stocks/A"+r.code]].forEach(function(x){var a=el("a",null,x[0]);a.href=x[1];a.target="_blank";a.rel="noopener";lk.appendChild(a)});B.appendChild(lk);
+  var ap=el("button","addpf","+ 포트폴리오에 담기");ap.onclick=function(){window.PF&&window.PF.add(r)};B.appendChild(ap);
   show();$("#sheet").scrollTop=0;
 }
 function show(){$("#veil").style.display="block";$("#sheet").classList.add("on");if(!(history.state&&history.state.sheet))history.pushState({sheet:1},"")}
@@ -242,6 +257,8 @@ function showInfo(){
   B.appendChild(el("p","desc","모든 점수는 과거 데이터로 계산한 참고 지표이며 매수·매도 권유가 아닙니다. 전략 효과는 '성과' 탭에서 확인하세요."));
   show();
 }
+function goPf(){tab="pf";Array.prototype.forEach.call($("#tabs").children,function(x){x.classList.toggle("on",x.textContent==="내 포트폴리오");if(x.textContent==="내 포트폴리오")x.scrollIntoView({inline:"center",block:"nearest"})});render();window.scrollTo(0,0)}
+window.HQ={el:el,num:num,cls:cls,$:$,F:F,BY:function(){return BY},show:show,closeSheet:closeSheet,openSheet:openSheet,render:render,goPf:goPf};
 function init(data){
   D=data;R=data.rows.map(function(a){var o={};data.cols.forEach(function(c,i){o[c]=a[i]});return o});
   R.forEach(function(r){BY[r.code]=r});
@@ -259,5 +276,6 @@ if(window.__DATA__)init(window.__DATA__);
 else fetch("data/latest.json?t="+Date.now()).then(function(r){if(!r.ok)throw new Error(r.status);return r.json()}).then(init).catch(function(e){$("#asof").textContent="";$("#list").appendChild(el("div","empty","데이터를 불러오지 못했습니다 ("+e.message+"). 첫 자동 실행이 끝났는지 확인하세요."))});
 })();
 </script>
+<script src="pf.js"></script>
 </body>
 </html>

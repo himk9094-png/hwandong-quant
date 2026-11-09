@@ -1,6 +1,6 @@
 name: backtest
 
-# 매월 2일 새벽 03:17(한국시간)에 백테스트를 다시 돌려 백테스트 탭 갱신
+# 매월 2일 새벽 03:17(한국시간)에 백테스트 탭 갱신 + '내 포트폴리오'용 과거 데이터(hist.json) 생성
 on:
   schedule:
     - cron: "17 18 1 * *"
@@ -18,7 +18,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 170
     steps:
       - uses: actions/checkout@v5
         with:
@@ -40,6 +40,11 @@ jobs:
         env:
           DART_API_KEY: ${{ secrets.DART_API_KEY }}
         run: python -u -m backtest.run
+      - name: 과거 데이터 묶음 (내 포트폴리오)
+        if: ${{ !cancelled() }}
+        env:
+          DART_API_KEY: ${{ secrets.DART_API_KEY }}
+        run: python -u -m backtest.pack
       - name: 캐시 저장
         if: always()
         uses: actions/cache/save@v4
@@ -47,11 +52,12 @@ jobs:
           path: cache
           key: bt-${{ github.run_id }}
       - name: 결과 커밋
+        if: ${{ !cancelled() }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add docs/backtest.json
-          git commit -m "백테스트 갱신 $(TZ=Asia/Seoul date +%F)" || echo "변경 없음"
+          git add docs/backtest.json docs/hist.json
+          git commit -m "백테스트·과거 데이터 갱신 $(TZ=Asia/Seoul date +%F)" || echo "변경 없음"
           for i in 1 2 3; do git pull --rebase origin main && git push && break; sleep 5; done
       - name: 현재 데이터 가져오기
         run: |
