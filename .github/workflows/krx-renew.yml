@@ -1,0 +1,28 @@
+name: krx-renew
+
+# 매년 11월 9일 09:03(한국시간) KRX 인증키 갱신 알림 → ntfy (키 유효기간 1년, 2026-11-10 승인)
+on:
+  schedule:
+    - cron: "3 0 9 11 *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install requests
+      - run: |
+          python - <<'PY'
+          from pipeline import ntfy
+          ntfy.send("KRX 인증키 갱신하세요 (내일 만료)",
+                    "openapi.krx.co.kr → 마이페이지에서 인증키 기간 연장/재발급.\n재발급으로 키가 바뀌면 GitHub Secrets의 KRX_API_KEY도 바꿔야 합니다.",
+                    click="https://openapi.krx.co.kr", tags=["key", "warning"], priority=4)
+          PY

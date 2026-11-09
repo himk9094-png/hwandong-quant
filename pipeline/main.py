@@ -144,6 +144,9 @@ def main(argv=None) -> int:
             print(f"  KRX 실패 → 네이버로 대체: {e}")
             warnings.append(f"KRX 수집 실패로 네이버 시세 사용: {e}")
             long = None
+            if not a.no_telegram:   # 키 만료·승인 해제 감지용 알림 (정기 실행에서만)
+                ntfy.send("환동퀀트: KRX 연결 실패", f"네이버 시세로 대신 계산했습니다. KRX 인증키 만료·API 승인 상태를 확인하세요.\n{str(e)[:200]}",
+                          tags=["warning"], priority=4)
     if long is None:
         source = "네이버 증권(비공식)"
         if kc is None:
