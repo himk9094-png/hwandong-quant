@@ -204,6 +204,9 @@ def parse_fin(js: dict) -> dict | None:
             total = total * 4 / len(got)
             approx = True
         rec[f] = total * 1e8
+    for f, t in (("ni_ctrl", "지배주주순이익"), ("ni_all", "당기순이익")):   # 지배/연결 따로 보관
+        v = [x for x in (val(t, k) for k in last4) if x is not None]
+        rec[f] = sum(v) * 4 / len(v) * 1e8 if len(v) >= 2 else None
     latest = periods[-1]
     rec["bps"] = val("BPS", latest)
     rec["debt_ratio"] = val("부채비율", latest)
@@ -253,7 +256,8 @@ def fundamentals(src: "NaverSource", codes: list[str], shares: pd.Series, budget
         return pd.DataFrame()
     df = pd.DataFrame(recs).set_index("code")
     sh = pd.to_numeric(shares.reindex(df.index), errors="coerce")
-    df["equity"] = df["bps"] * sh                          # 자본총계(근사) = BPS × 상장주식수
+    df["equity"] = df["bps"] * sh                          # 지배주주 자본(근사) = BPS × 상장주식수
+    df["eq_ctrl"] = df["equity"]
     df["liab"] = df["debt_ratio"] / 100 * df["equity"]      # 부채총계 = 부채비율 × 자본
     df["assets"] = df["equity"] + df["liab"]
-    return df[["fin", "rev", "op", "ni", "equity", "liab", "assets"]]
+    return df[["fin", "rev", "op", "ni", "equity", "liab", "assets", "ni_ctrl", "ni_all", "eq_ctrl"]]

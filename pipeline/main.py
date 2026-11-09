@@ -153,15 +153,22 @@ def main(argv=None) -> int:
             warnings.append(f"DART 수집 실패: {e}")
             print(f"  경고: {e}")
     if not a.demo:
-        missing = [c for c in last.index if c not in fund.index]
-        if missing:
-            print(f"DART에 없는 {len(missing)}종목은 네이버 재무로 채움…")
-            try:
-                nf = naver.fundamentals(naver.NaverSource(cache / "naver"), missing, last["shares"])
-                fin_src["네이버"] = int(len(nf))
-                fund = pd.concat([fund, nf]) if len(fund) else nf
-            except Exception as e:
-                warnings.append(f"네이버 재무 수집 실패: {e}")
+        # 네이버 분기 재무: DART에 없는 종목 채우기 + 전 종목 지배주주 순이익·자본(지주사 왜곡 보정)
+        print("네이버 재무(지배주주 기준) 수집 중…")
+        try:
+            nf = naver.fundamentals(naver.NaverSource(cache / "naver"), list(last.index), last["shares"])
+        except Exception as e:
+            nf = pd.DataFrame()
+            warnings.append(f"네이버 재무 수집 실패: {e}")
+        if len(nf):
+            if len(fund):
+                fund = fund.copy()
+                fund["ni_ctrl"] = nf["ni_ctrl"].reindex(fund.index)
+                fund["eq_ctrl"] = nf["eq_ctrl"].reindex(fund.index)
+            missing = [c for c in nf.index if c not in fund.index]
+            fin_src["네이버"] = len(missing)
+            fund = pd.concat([fund, nf.loc[missing]]) if len(fund) else nf
+            print(f"  지배주주 보정 {int(fund['ni_ctrl'].notna().sum())}종목, 네이버로 채움 {len(missing)}종목")
 
     df = factors.compute(panel, last, fund, cfg)
     df = df.join(signals.compute(panel), how="left")

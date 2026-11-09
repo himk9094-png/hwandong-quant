@@ -36,7 +36,7 @@ def compute(panel: dict, last: pd.DataFrame, fund: pd.DataFrame, cfg: dict) -> p
     df = df[uni].copy()
 
     df = df.join(fund, how="left")
-    for c in ("ca", "nca", "assets", "cl", "ncl", "liab", "equity", "rev", "op", "ni"):
+    for c in ("ca", "nca", "assets", "cl", "ncl", "liab", "equity", "rev", "op", "ni", "ni_ctrl", "eq_ctrl"):
         if c not in df:
             df[c] = np.nan
         df[c] = pd.to_numeric(df[c], errors="coerce")
@@ -46,21 +46,27 @@ def compute(panel: dict, last: pd.DataFrame, fund: pd.DataFrame, cfg: dict) -> p
     m = df["mcap"]
     bad_eq = (df["equity"] / m) > 20                          # 감자·재상장 등으로 BPS가 깨진 경우
     df.loc[bad_eq, ["equity", "liab", "assets"]] = np.nan
-    eq = _pos(df["equity"])
-    df["per"] = m / _pos(df["ni"])
+    # 지주사 보정: 시총은 지배주주 몫이므로 PER·PBR·ROE는 지배주주 순이익·자본으로 계산
+    # (연결 순이익·자본에는 자회사 소수주주 몫이 섞여 지주사가 과도하게 싸 보임)
+    df.loc[(df["eq_ctrl"] / m) > 20, "eq_ctrl"] = np.nan
+    df["nic"] = df["ni_ctrl"].fillna(df["ni"])
+    df["eqc"] = df["eq_ctrl"].fillna(df["equity"])
+    minority = (df["equity"] - df["eq_ctrl"]).clip(lower=0).fillna(0)   # 비지배지분(연결자본 − 지배자본)
+    eq = _pos(df["eqc"])
+    df["per"] = m / _pos(df["nic"])
     df["pbr"] = m / eq
     df["psr"] = m / _pos(df["rev"])
-    df["ey"] = df["op"] / (m + df["liab"])                  # 이익수익률(근사): 영업이익 / (시총 + 부채총계)
+    df["ey"] = df["op"] / (m + df["liab"] + minority)        # 이익수익률(근사): 영업이익 / (시총 + 부채 + 비지배지분)
     ic = df["ca"] - df["cl"] + df["nca"]                     # 투하자본(근사): 순운전자본 + 비유동자산
     ic = ic.where(ic.notna(), df["assets"])                   # 상세 계정이 없으면 총자산
     df["roc"] = df["op"] / ic.where(ic > 0)
-    df["roe"] = df["ni"] / eq
+    df["roe"] = df["nic"] / eq
     df["roa"] = df["ni"] / _pos(df["assets"])
     df["opm"] = df["op"] / _pos(df["rev"])
-    df["debt"] = df["liab"] / eq
+    df["debt"] = df["liab"] / _pos(df["equity"])
 
     # 밸류: 이익·순자산·매출 수익률 + 이익수익률 (높을수록 싸다)
-    val_parts = pd.concat([_pr(df["ni"] / m), _pr(df["equity"] / m), _pr(df["rev"] / m), _pr(df["ey"])], axis=1)
+    val_parts = pd.concat([_pr(df["nic"] / m), _pr(df["eqc"] / m), _pr(df["rev"] / m), _pr(df["ey"])], axis=1)
     df["v"] = val_parts.mean(axis=1).where(val_parts.notna().sum(axis=1) >= 3)
     q_parts = pd.concat([_pr(df["roe"]), _pr(df["roa"]), _pr(df["opm"]), _pr(df["debt"], False)], axis=1)
     df["q"] = q_parts.mean(axis=1).where(q_parts.notna().sum(axis=1) >= 3)
@@ -90,7 +96,7 @@ def compute(panel: dict, last: pd.DataFrame, fund: pd.DataFrame, cfg: dict) -> p
 
     # 1년 수익률 / EV÷영업이익
     df["r1y"] = (c.iloc[t] / c.iloc[t - 252] - 1).reindex(df.index) if t >= 252 else np.nan
-    df["evop"] = (df["mcap"] + df["liab"]) / df["op"].where(df["op"] > 0)
+    df["evop"] = (df["mcap"] + df["liab"] + minority) / df["op"].where(df["op"] > 0)
 
     # ---- A안 (아침 리포트 규칙): 코스피, 시총·주가·거래대금·흑자 조건 ----
     a = cfg["aplan"]
@@ -127,10 +133,10 @@ def compute(panel: dict, last: pd.DataFrame, fund: pd.DataFrame, cfg: dict) -> p
         df.loc[r.index, col] = np.arange(1, len(r) + 1)
 
     put("lm", B["mom12"])                                                  # 대형 모멘텀: 12-1개월 수익률
-    parts = pd.concat([_pr(B["ni"] / B["mcap"]), _pr(B["ey"]), _pr(B["roa"]), _pr(B["roe"]),
+    parts = pd.concat([_pr(B["nic"] / B["mcap"]), _pr(B["ey"]), _pr(B["roa"]), _pr(B["roe"]),
                        _pr(B["mom12"]), _pr(B["mom6_1"])], axis=1)
     put("lc", parts.mean(axis=1).where(parts.notna().sum(axis=1) >= 4))   # 대형 종합: 가치·질·모멘텀
-    okb = (B["op"] > 0) & (B["ni"] > 0)
+    okb = (B["op"] > 0) & (B["nic"] > 0)
     put("lf", (_pr(B["ey"][okb]) + _pr(B["roa"][okb])))                  # 대형 마법공식: 이익수익률 + ROA
     hold = cfg.get("holdings") or {}
     df["hold"] = df.index.isin(list(hold)).astype(int)
