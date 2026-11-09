@@ -119,7 +119,10 @@ def main(argv=None) -> int:
         kc, dc = mk, demo.DemoDart(mk)
         source = "샘플"
     else:
-        kc = krx.KrxClient(os.environ["KRX_API_KEY"]) if os.environ.get("KRX_API_KEY") else None
+        kk = (os.environ.get("KRX_API_KEY") or "").strip()   # 붙여넣을 때 섞인 공백·줄바꿈 제거
+        if kk:
+            print(f"KRX 키 확인: {len(kk)}자")
+        kc = krx.KrxClient(kk) if kk else None
         try:
             dc = dart.DartClient(os.environ.get("DART_API_KEY"))
         except dart.DartError as e:
