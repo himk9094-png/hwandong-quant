@@ -141,6 +141,7 @@ def main(argv=None) -> int:
             nv = pd.DataFrame({"date": []}) if a.demo else naver.NaverSource(cache / "naver")._chart("005930", 5)
             now = dt.datetime.now(config.KST)
             nd = [x for x in nv["date"].astype(str) if not (x == krx.ymd(now.date()) and now.time() < dt.time(15, 40))]
+            store.get(asof, "KOSDAQ")    # 코스닥 API 승인 여부도 먼저 확인
             if nd and max(nd) > asof:
                 stale = True
                 raise krx.KrxError(f"KRX 데이터가 아직 {asof_d}까지만 있음(최신 거래일 {max(nd)})")
