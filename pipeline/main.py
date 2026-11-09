@@ -130,21 +130,30 @@ def main(argv=None) -> int:
             warnings.append(str(e) + " 재무 팩터 없이 계산했습니다.")
 
     long = None
+    stale = False
     if kc is not None:
         try:
+            t_krx = time.time()
             store = krx.KrxStore(kc, cache / "krx", today)
             asof_d = store.find_asof()
             asof = krx.ymd(asof_d)
+            # KRX는 다음 날 아침에 전날 데이터를 올림 → 아직 안 올라왔으면 이번만 네이버 사용
+            nv = pd.DataFrame({"date": []}) if a.demo else naver.NaverSource(cache / "naver")._chart("005930", 5)
+            now = dt.datetime.now(config.KST)
+            nd = [x for x in nv["date"].astype(str) if not (x == krx.ymd(now.date()) and now.time() < dt.time(15, 40))]
+            if nd and max(nd) > asof:
+                stale = True
+                raise krx.KrxError(f"KRX 데이터가 아직 {asof_d}까지만 있음(최신 거래일 {max(nd)})")
             print(f"기준일 {asof_d} — 주가 이력 수집 중…")
             long = store.history(asof_d, cfg["history_calendar_days"], cfg["universe"]["markets"])
-            print(f"  KRX 신규 요청 {store.fetched}건")
+            print(f"  KRX 신규 요청 {store.fetched}건 ({time.time() - t_krx:.0f}초)")
         except Exception as e:  # 키 오류·서비스 미승인·장애 시 네이버로 대체
             if a.demo:
                 raise
             print(f"  KRX 실패 → 네이버로 대체: {e}")
             warnings.append(f"KRX 수집 실패로 네이버 시세 사용: {e}")
             long = None
-            if not a.no_telegram:   # 키 만료·승인 해제 감지용 알림 (정기 실행에서만)
+            if not a.no_telegram and not stale:   # 키 만료·승인 해제 감지용 알림 (정기 실행에서만)
                 ntfy.send("환동퀀트: KRX 연결 실패", f"네이버 시세로 대신 계산했습니다. KRX 인증키 만료·API 승인 상태를 확인하세요.\n{str(e)[:200]}",
                           tags=["warning"], priority=4)
     if long is None:
