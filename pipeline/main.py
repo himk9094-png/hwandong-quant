@@ -126,19 +126,28 @@ def main(argv=None) -> int:
             dc = None
             warnings.append(str(e) + " 재무 팩터 없이 계산했습니다.")
 
-    if kc is None:
+    long = None
+    if kc is not None:
+        try:
+            store = krx.KrxStore(kc, cache / "krx", today)
+            asof_d = store.find_asof()
+            asof = krx.ymd(asof_d)
+            print(f"기준일 {asof_d} — 주가 이력 수집 중…")
+            long = store.history(asof_d, cfg["history_calendar_days"], cfg["universe"]["markets"])
+            print(f"  KRX 신규 요청 {store.fetched}건")
+        except Exception as e:  # 키 오류·서비스 미승인·장애 시 네이버로 대체
+            if a.demo:
+                raise
+            print(f"  KRX 실패 → 네이버로 대체: {e}")
+            warnings.append(f"KRX 수집 실패로 네이버 시세 사용: {e}")
+            long = None
+    if long is None:
         source = "네이버 증권(비공식)"
-        warnings.append("주가는 네이버 증권 시세로 계산했습니다(관리종목 필터 없음). KRX_API_KEY를 등록하면 자동으로 KRX로 바뀝니다.")
-        print("KRX 키 없음 → 네이버 증권 시세 사용. 주가 이력 수집 중…")
+        if kc is None:
+            warnings.append("주가는 네이버 증권 시세로 계산했습니다(관리종목 필터 없음). KRX_API_KEY를 등록하면 자동으로 KRX로 바뀝니다.")
+        print("네이버 증권 시세 사용. 주가 이력 수집 중…")
         long, asof_d = naver.NaverSource(cache / "naver").load(today)
         asof = krx.ymd(asof_d)
-    else:
-        store = krx.KrxStore(kc, cache / "krx", today)
-        asof_d = store.find_asof()
-        asof = krx.ymd(asof_d)
-        print(f"기준일 {asof_d} — 주가 이력 수집 중…")
-        long = store.history(asof_d, cfg["history_calendar_days"], cfg["universe"]["markets"])
-        print(f"  KRX 신규 요청 {store.fetched}건")
     panel, last, events = prices.build(long, asof)
     print(f"  기준일 {asof_d}, 거래일 {len(panel['close'])}일, 종목 {len(last)}개, 권리변동 보정 {events}건")
 
