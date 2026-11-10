@@ -59,10 +59,12 @@ jobs:
           git add docs/backtest.json docs/hist.json
           git commit -m "백테스트·과거 데이터 갱신 $(TZ=Asia/Seoul date +%F)" || echo "변경 없음"
           for i in 1 2 3; do git pull --rebase origin main && git push && break; sleep 5; done
-      - name: 현재 데이터 가져오기
+      - name: 현재 데이터 가져오기 (주식·코인)
         run: |
           mkdir -p docs/data
           curl -sf "https://${GITHUB_REPOSITORY_OWNER,,}.github.io/${GITHUB_REPOSITORY#*/}/data/latest.json" -o docs/data/latest.json
+          curl -sf "https://${GITHUB_REPOSITORY_OWNER,,}.github.io/${GITHUB_REPOSITORY#*/}/coin.json" -o docs/coin.json || echo "코인 데이터 없음"
+          curl -sf "https://${GITHUB_REPOSITORY_OWNER,,}.github.io/${GITHUB_REPOSITORY#*/}/coinhist.json" -o docs/coinhist.json || echo "코인 데이터 없음"
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
         with:

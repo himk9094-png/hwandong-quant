@@ -2,3 +2,5 @@ cache/
 __pycache__/
 *.pyc
 docs/data/latest.json
+docs/coin.json
+docs/coinhist.json

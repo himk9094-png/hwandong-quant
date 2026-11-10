@@ -67,6 +67,10 @@ jobs:
           git commit -m "기록 $(TZ=Asia/Seoul date +%F)" || echo "변경 없음"
           for i in 1 2 3; do git pull --rebase origin main && git push && break; sleep 5; done
 
+      - name: 코인 데이터 가져오기 (같이 배포해야 사라지지 않음)
+        run: |
+          curl -sf "https://${GITHUB_REPOSITORY_OWNER,,}.github.io/${GITHUB_REPOSITORY#*/}/coin.json" -o docs/coin.json || echo "코인 데이터 없음"
+          curl -sf "https://${GITHUB_REPOSITORY_OWNER,,}.github.io/${GITHUB_REPOSITORY#*/}/coinhist.json" -o docs/coinhist.json || echo "코인 데이터 없음"
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
         with:

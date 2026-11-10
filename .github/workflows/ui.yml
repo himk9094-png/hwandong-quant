@@ -21,10 +21,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - name: 현재 데이터 가져오기
+      - name: 현재 데이터 가져오기 (주식·코인)
         run: |
           mkdir -p docs/data
           curl -sf "https://${GITHUB_REPOSITORY_OWNER,,}.github.io/${GITHUB_REPOSITORY#*/}/data/latest.json" -o docs/data/latest.json
+          curl -sf "https://${GITHUB_REPOSITORY_OWNER,,}.github.io/${GITHUB_REPOSITORY#*/}/coin.json" -o docs/coin.json || echo "코인 데이터 없음"
+          curl -sf "https://${GITHUB_REPOSITORY_OWNER,,}.github.io/${GITHUB_REPOSITORY#*/}/coinhist.json" -o docs/coinhist.json || echo "코인 데이터 없음"
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
         with:

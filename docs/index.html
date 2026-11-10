@@ -82,6 +82,8 @@ svg.pfchart{width:100%;height:200px;display:block;margin-top:6px}
 .pfsave{display:block;width:100%;margin:14px 0 4px;padding:12px;border-radius:10px;border:none;background:var(--acc);color:#16181d;font-weight:700;font-size:15px}
 .pfta{width:100%;height:90px;margin:8px 0;background:var(--panel2);color:var(--fg);border:1px solid var(--line);border-radius:8px;font-size:12px;padding:8px}
 .addpf{width:100%;margin-top:8px;padding:10px;border-radius:10px;border:1px solid var(--acc);background:none;color:var(--acc);font-weight:700;font-size:14px}
+.good{color:var(--good)}
+.chip.good{background:#173a2c;color:var(--good)}.chip.up{background:#4a1f24;color:#ff8a8a}
 </style>
 </head>
 <body>
@@ -103,7 +105,7 @@ svg.pfchart{width:100%;height:200px;display:block;margin-top:6px}
 <script>
 (function(){
 "use strict";
-var D=null,R=[],BY={},tab="total",shown=50,query="",sigOnly=false;
+var D=null,R=[],BY={},tab=location.hash==="#coin"?"coin":"total",shown=50,query="",sigOnly=false;
 var $=function(s){return document.querySelector(s)};
 function el(t,c,x){var e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e}
 function nz(v){return v!==null&&v!==undefined}
@@ -132,6 +134,7 @@ var TABS=[
  {k:"mom",l:"모멘텀",d:"12-1개월·6-1개월·3개월 수익률 백분위 평균. 최근 1개월은 단기 되돌림 때문에 뺀다.",f:function(r){return nz(r.m)},s:sortBy("m"),c:[["점수","m","s"],["12-1M","mom12","sp"],["6M","mom6","sp"],["52주고점","hi52","sp"]]},
  {k:"signal",l:"매수신호",d:"최근 3거래일 안에 생긴 <b>기술적 매수신호</b>(종가 기준): 20/60 골든크로스, RSI 30 상향돌파, 볼린저 하단 복귀, 스토캐스틱 침체권(20 미만) 골든, 52주 신고가, 거래량 급증(3배+, +3%↑).",f:function(r){return r.nsig>0},s:function(a,b){return (b.nsig-a.nsig)||sortBy("total")(a,b)},c:[["RSI","rsi","i"],["이격도","disp","x"],["종합","total","s"]],chips:true},
  {k:"surge",l:"급등후보",d:"거래량 급증·20일 고점 돌파·밴드 수축 후 확장·RSI 강세·당일 상승폭으로 매긴 점수. <b>참고용 — 검증 전</b>. 성과 탭에서 실제 결과를 확인하세요.",f:function(r){return r.surge>0},s:sortBy("surge"),c:[["점수","surge","i"],["거래량","vr","xv"],["RSI","rsi","i"],["20일평균거래대금","tv20","eok"]],chips:true},
+ {k:"coin",l:"코인",custom:"coin"},
  {k:"pf",l:"내 포트폴리오",custom:"pf"},
  {k:"perf",l:"성과",custom:"perf"},
  {k:"bt",l:"백테스트",custom:"bt"},
@@ -159,12 +162,13 @@ function filt(r){
 }
 function render(){
   var L=$("#list");L.innerHTML="";var t=TABS.find(function(x){return x.k===tab});
-  $("#filters").style.display=(t.custom==="perf"||t.custom==="bt"||t.custom==="pf")?"none":"flex";
+  $("#filters").style.display=(t.custom==="perf"||t.custom==="bt"||t.custom==="pf"||t.custom==="coin")?"none":"flex";
   ["#fMkt","#fCap","#fTv"].forEach(function(s){$(s).style.display=t.custom==="aplan"?"none":""});
   var d=el("p","desc");d.innerHTML=t.d||"";if(t.d)L.appendChild(d);
   if(t.season&&D){var mo=+D.meta.asof.slice(5,7),on=(mo>=11||mo<=4);var bn=el("div","banner",on?"지금은 보유 구간(11~4월)입니다. 백테스트 기준: 11월 초 매수 → 2월 초 교체 → 5월 초 매도.":"지금은 쉬는 구간(5~10월)입니다. 백테스트 기준 11월 초에 매수합니다.");bn.style.margin="0 0 10px";L.appendChild(bn)}
   if(t.custom==="aplan")return renderA(L,t);
   if(t.custom==="pf")return window.PF?window.PF.render(L):L.appendChild(el("div","empty","불러오는 중…"));
+  if(t.custom==="coin")return window.CO?window.CO.render(L):L.appendChild(el("div","empty","불러오는 중…"));
   if(t.custom==="perf")return renderPerf(L);
   if(t.custom==="bt")return renderBT(L);
   if(t.custom==="search")return renderSearch(L);
@@ -266,7 +270,7 @@ function init(data){
   var bn=$("#banner");bn.innerHTML="";
   if(data.meta.sample){bn.appendChild(el("div","banner","샘플 데이터입니다 (가짜 종목·가짜 숫자). 실제 데이터는 설치 후 매일 자동으로 갱신됩니다."))}
   else{var age=(Date.now()-new Date(data.meta.asof+"T15:30:00+09:00"))/864e5;if(age>4)bn.appendChild(el("div","banner","데이터가 "+Math.floor(age)+"일 전 기준입니다. GitHub Actions 실행 기록을 확인하세요."))}
-  var T=$("#tabs");TABS.forEach(function(t){var b=el("button","tab"+(t.k===tab?" on":""),t.l);b.onclick=function(){tab=t.k;shown=50;Array.prototype.forEach.call(T.children,function(x){x.classList.remove("on")});b.classList.add("on");render();window.scrollTo(0,0)};T.appendChild(b)});
+  var T=$("#tabs");TABS.forEach(function(t){var b=el("button","tab"+(t.k===tab?" on":""),t.l);b.onclick=function(){if(t.k==="coin"&&window.CO)window.CO.home();tab=t.k;shown=50;Array.prototype.forEach.call(T.children,function(x){x.classList.remove("on")});b.classList.add("on");render();window.scrollTo(0,0)};T.appendChild(b)});
   ["#fMkt","#fCap","#fTv"].forEach(function(s){$(s).onchange=function(){shown=50;render()}});
   $("#fSig").onclick=function(){sigOnly=!sigOnly;this.classList.toggle("on",sigOnly);this.setAttribute("aria-pressed",String(sigOnly));shown=50;render()};
   $("#veil").onclick=closeSheet;$("#close").onclick=closeSheet;$("#info").onclick=showInfo;
@@ -277,5 +281,7 @@ else fetch("data/latest.json?t="+Date.now()).then(function(r){if(!r.ok)throw new
 })();
 </script>
 <script src="pf.js"></script>
+<script src="coin-engine.js"></script>
+<script src="coin.js"></script>
 </body>
 </html>

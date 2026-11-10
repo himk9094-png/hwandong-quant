@@ -1,0 +1,60 @@
+name: coin
+
+# 4시간마다(한국시간 01·05·09·13·17·21시 11분) 코인 시세·온체인 갱신 → 코인 탭 + 새 신호 ntfy 알림
+# 바이낸스 4시간봉이 정각에 마감되므로 11분 뒤에 돈다. 일봉은 한국시간 09시 마감.
+on:
+  schedule:
+    - cron: "11 0,4,8,12,16,20 * * *"
+  workflow_dispatch:
+  push:                        # 코인 계산 코드가 바뀌면 바로 다시 계산
+    branches: [main]
+    paths: ["coin/**", "docs/coin-engine.js"]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: coin
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: 지난 알림 상태 가져오기
+        run: |
+          base="https://${GITHUB_REPOSITORY_OWNER,,}.github.io/${GITHUB_REPOSITORY#*/}"
+          curl -sf "$base/coin.json" -o /tmp/coin.prev.json || echo "이전 상태 없음 (첫 실행)"
+      - name: 계산·알림
+        run: node coin/build.mjs /tmp/coin.prev.json
+      - name: 현재 주식 데이터 가져오기 (같이 배포해야 사라지지 않음)
+        run: |
+          base="https://${GITHUB_REPOSITORY_OWNER,,}.github.io/${GITHUB_REPOSITORY#*/}"
+          mkdir -p docs/data
+          curl -sf "$base/data/latest.json" -o docs/data/latest.json
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: docs
+      - name: 실패 알림 (ntfy)
+        if: failure()
+        run: node coin/build.mjs --fail "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    concurrency:
+      group: pages-deploy        # 여러 작업이 동시에 배포하다 충돌하지 않게 한 줄로 세움
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4
