@@ -216,13 +216,13 @@ try {
   }
 } catch (e) { console.log("내 전략 등록 확인 실패:", e.message); }
 const mineChanged = !!prev && mine.h !== (prev.state.mine?.h ?? null);
-const mineNow = [];
+const mineNow = [], mineEv = [];   // mineEv: 전략별 새 매매 → 전략마다 따로 알림(제목 = 전략 이름)
 for (const m of mine.list) {
   try {
     const res = m.type === "mix" ? CE.mix(X, (m.items || []).map(it => ({ w: +it.w || 0, P: it.P })), +m.start || CFG.start) : CE.simulate(X, m.P);
     if (!res) continue;
-    if (prev && prevLast !== null) for (const t of res.trades) if (t.i > prevLast)
-      events.push({ pri: 4, line: `[내 전략] ${m.name} · ${t.s} ${t.a === "buy" ? "매수" : "매도"} ${t.k} · ${usd(t.px)}${t.src ? ` · ${t.src}` : ""} (${t.why}) [${CE.dateAt(START, t.i).slice(5)} 종가]` });
+    const tr = prev && prevLast !== null ? res.trades.filter(t => t.i > prevLast) : [];
+    if (tr.length) mineEv.push({ name: m.name, tr });
     if (m.type === "mix") { mineNow.push(`${m.name}: 묶음 ${(m.items || []).length}개 전략`); continue; }
     const st = CE.status(X, res);
     mineNow.push(`${m.name}: ` + Object.keys(st).map(s => { const x = st[s]; return `${s} ${x.hold > 0.001 ? "보유 " + Math.round(x.hold * 100) + "%" : "현금"}${x.sell ? " · 매도 조건 충족" : x.buy ? " · 매수 조건 충족" : ""}`; }).join(" / "));
@@ -266,6 +266,13 @@ if (mineChanged) {
   const title = mine.list.length ? `내 전략 알림 설정 · ${mine.list.length}개` : "내 전략 알림 꺼짐";
   await send(title, lines.join("\n"), { click, tags: ["bell"] });
   alerts.unshift({ t: kst(Date.now()), title, lines });
+}
+for (const e of mineEv.slice(0, 8)) {
+  const t0 = e.tr[e.tr.length - 1], one = e.tr.length === 1, buy = e.tr.every(t => t.a === "buy"), sell = e.tr.every(t => t.a === "sell");
+  const title = `${e.name} · ` + (one ? `${t0.s} ${t0.a === "buy" ? "매수" : "매도"} ${t0.k}` : `${buy ? "매수" : sell ? "매도" : "매매"} ${e.tr.length}건`);
+  const lines = e.tr.map(t => `${t.s} ${t.a === "buy" ? "매수" : "매도"} ${t.k} · ${usd(t.px)}${t.src ? ` · ${t.src}` : ""} (${t.why}) [${CE.dateAt(START, t.i).slice(5)} 종가]`);
+  await send(title, lines.join("\n"), { click, tags: [buy ? "chart_with_upwards_trend" : sell ? "chart_with_downwards_trend" : "bell"], priority: 4 });
+  alerts.unshift({ t: kst(Date.now()), title: `[내 전략] ${title}`, lines });
 }
 if (prev && events.length) {
   const lines = events.map(e => e.line);

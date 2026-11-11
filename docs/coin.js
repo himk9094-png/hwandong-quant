@@ -14,13 +14,18 @@ function save(L){try{localStorage.setItem(KEY,JSON.stringify(L));return true}cat
 function today(){return new Date(Date.now()+9*36e5).toISOString().slice(0,10)}
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,6)}
 function get(id){return load().filter(function(p){return p.id===id})[0]}
-function put(p){var L=load(),i=L.findIndex(function(x){return x.id===p.id});if(i>=0)L[i]=p;else L.push(p);var ok=save(L);if(ok)setTimeout(sync,0);return ok}
-function del(id){save(load().filter(function(p){return p.id!==id}));setTimeout(sync,0)}
+function put(p){var L=load(),i=L.findIndex(function(x){return x.id===p.id});if(i>=0)L[i]=p;else L.push(p);var ok=save(L);if(ok)syncLater();return ok}
+function del(id){save(load().filter(function(p){return p.id!==id}));syncLater()}
 
 // ---------------------------------------------------------------- 내 전략 알림
 // '알림 받기'를 켠 전략 목록 전체를 ntfy 등록 주제로 보낸다 → GitHub Actions가 받아서 매일 계산하고 새 매수·매도를 알림.
 // 서버에 올라간 목록(coin.json의 mine.h)과 다르면 다시 보낸다(6시간 안에 같은 걸 보냈으면 대기).
-var SK="hq_coin_sync";
+var SK="hq_coin_sync",syncT=null;
+// 수정·삭제할 때마다 보내면 등록 메시지가 수십 건 쌓이므로, 마지막 변경 후 1분 뒤(또는 앱을 닫을 때) 한 번만 보낸다
+function syncLater(){clearTimeout(syncT);syncT=setTimeout(function(){syncT=null;sync()},60000)}
+function flushSync(){if(syncT){clearTimeout(syncT);syncT=null;sync(false,true)}}
+document.addEventListener("visibilitychange",function(){if(document.visibilityState==="hidden")flushSync()});
+window.addEventListener("pagehide",flushSync);
 function slim(p){var q={};["name","coins","buy","sell","oc","ocw","nb","gap","ns","lev","start","hold"].forEach(function(k){if(p[k]!=null)q[k]=p[k]});return q}
 function alertList(){var out=[];load().forEach(function(p){if(!p.alert)return;
   if(p.type==="mix"){var items=p.items.map(function(it){var P=resolve(it.ref,it.cs);return P&&it.w>0?{w:it.w,P:slim(P)}:null}).filter(Boolean);if(items.length)out.push({id:p.id,name:p.name,type:"mix",start:p.start,items:items})}
@@ -28,7 +33,7 @@ function alertList(){var out=[];load().forEach(function(p){if(!p.alert)return;
 function hsh(t){var h=5381;for(var i=0;i<t.length;i++)h=((h*33)^t.charCodeAt(i))>>>0;return h.toString(36)}
 function alertHash(){return hsh(JSON.stringify(alertList()))}
 function registered(){return !!J&&((J.mine&&J.mine.h)||hsh("[]"))===alertHash()}
-function sync(force){
+function sync(force,bg){
   if(!J||!J.cfg||!J.cfg.reg)return Promise.resolve(false);
   var list=alertList(),h=hsh(JSON.stringify(list));if(registered())return Promise.resolve(true);
   var last={};try{last=JSON.parse(localStorage.getItem(SK)||"{}")}catch(e){}
@@ -36,7 +41,7 @@ function sync(force){
   var msg=JSON.stringify({v:1,h:h,list:list});
   if(new TextEncoder().encode(msg).length>3900){alert("알림 켠 전략이 너무 많아서 보낼 수 없습니다. 몇 개를 끄세요.");return Promise.resolve(false)}
   try{localStorage.setItem(SK,JSON.stringify({h:h,t:Date.now()}))}catch(e){}       // 보내는 중 중복 전송 방지
-  return fetch("https://ntfy.sh/"+J.cfg.reg,{method:"POST",body:msg}).then(function(r){if(!r.ok)throw new Error(r.status);return false})
+  return fetch("https://ntfy.sh/"+J.cfg.reg,{method:"POST",body:msg,keepalive:!!bg}).then(function(r){if(!r.ok)throw new Error(r.status);return false})
     .catch(function(e){try{localStorage.removeItem(SK)}catch(x){}if(force)alert("알림 등록을 보내지 못했습니다("+e.message+"). 인터넷 연결을 확인하고 다시 눌러주세요.");return false});
 }
 
@@ -224,7 +229,7 @@ function renderOne(L){
   else btn.push(["수정",function(){p.type==="mix"?editMix(p):editRule(p)}],["복제",function(){var q=JSON.parse(JSON.stringify(p));q.id=uid();q.name+=" 사본";q.created=today();q.alert=false;put(q);cur={k:"my",id:q.id};Q.render()}],["삭제",function(){if(confirm("'"+p.name+"' 삭제할까요?"+(p.alert?" (알림도 꺼집니다)":""))){del(p.id);cur=null;Q.render()}}],
     [p.alert?"🔔 알림 켜짐":"🔕 알림 받기",function(){
       if(p.alert&&!confirm("'"+p.name+"' 알림을 끌까요?"))return;
-      p.alert=!p.alert;put(p);sync(true).then(function(){
+      p.alert=!p.alert;put(p);clearTimeout(syncT);syncT=null;sync(true).then(function(){
         alert(p.alert?"알림을 켰습니다. 보통 30분 안에 등록되고 ntfy로 '내 전략 알림 설정' 확인이 옵니다. 그 뒤로는 매일 09시 일봉 마감 후 새 매수·매도가 생기면 알려드립니다.":"알림을 껐습니다. 30분 안에 반영됩니다.");Q.render()})}]);
   btn.forEach(function(x){var b=el("button","tgl",x[0]);b.onclick=x[1];top.appendChild(b)});L.appendChild(top);
   sec(L,p.name);L.appendChild(el("p","desc",isP?p.d:p.type==="mix"?mixDesc(p):ruleDesc(p)));
