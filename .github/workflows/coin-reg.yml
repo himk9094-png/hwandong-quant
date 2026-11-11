@@ -1,12 +1,12 @@
 name: coin-reg
 
-# 바깥 예약 사이트(cron-job.org)가 5분마다 이 작업을 실행시킨다 (GitHub 자체 예약은 자주 밀려서 보조로만 둠).
+# 5분마다(GitHub 예약 최소 간격) 확인. GitHub 예약은 바쁘면 밀릴 수 있다 — 더 정확히 하려면 cron-job.org 같은 바깥 예약으로 workflow_dispatch 호출.
 # 아래 둘 중 하나면 코인 작업(coin)을 바로 돌린다:
 #   1) 앱에서 '알림 받기'를 켜고 끈 게 있음 (ntfy 등록 주제에 새 메시지)
 #   2) 마지막 계산 뒤로 새 4시간봉이 마감됨 (01·05·09·13·17·21시 정각 + 3분)
 on:
   schedule:
-    - cron: "7,37 * * * *"
+    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 permissions:
