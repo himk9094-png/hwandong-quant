@@ -58,7 +58,8 @@ python -m http.server -d docs      # http://localhost:8000
 - **데이터**: 바이낸스 시세 전용 주소(`data-api.binance.vision`, 미국 서버에서도 열림) 일봉·4시간봉 + Coin Metrics 무료 커뮤니티 API(MVRV·해시레이트·채굴 발행액·거래소 순유입). 바이낸스 상장 전 구간은 Coin Metrics 종가.
 - **온체인 국면**: BTC MVRV의 최근 4년(반감기 한 주기) 백분위 — 하위 20% 바닥권, 상위 20% 과열권. 2년 기준은 백테스트에서 실패해서 4년으로 바꿨다(과최적화 위험 있음).
 - **프리셋**: 단순 보유 · 200일선 추세 · 역추세 기본(365일선 아래+RSI 30 미만 4분할 매수, 21일선이 365일선 +50%면 2분할 매도) · 역추세+온체인 · 온체인 단독 · UT Bot 일봉. 지표·전략 계산은 `docs/coin-engine.js` 하나를 브라우저와 알림이 같이 쓴다.
-- **내 조합 전략**: 조건 전략(코인 비중·매수 조건 AND·매도 조건 OR·분할·2배 ETF 근사)과 전략 묶음. 폰 브라우저에 저장되고 알림은 가지 않는다.
-- **알림(ntfy)**: `coin/config.json`에서 바꾼다. `alert_presets`×`alert_coins`의 매수·매도, `alert_ut4h` 코인의 UT Bot 4시간봉 전환, 온체인 국면 변화. 지난 상태는 배포된 `coin.json`에 남겨 같은 신호를 두 번 보내지 않는다.
+- **내 조합 전략**: 조건 전략(코인 비중·매수 조건 AND·매도 조건 OR·분할·2배 ETF 근사)과 전략 묶음. 폰 브라우저에 저장된다.
+- **내 전략 알림**: 전략 화면의 '알림 받기'를 켜면 켠 전략 목록 전체를 ntfy 등록 주제(`<코인 주제>-reg`, 구독 불필요)로 보낸다. `coin-reg` 작업이 30분마다 새 등록을 확인해 `coin` 작업을 돌리고, `coin` 작업이 목록을 `coin.json`(state.mine)에 보관하며 매일 일봉 마감 후 새 매수·매도를 알린다. 서버 목록과 폰 목록이 다르면 앱이 열릴 때 다시 보낸다.
+- **알림(ntfy)**: 코인 알림은 주식과 다른 주제(`config.json`의 `ntfy_topic_coin`)로 간다 — ntfy 앱에서 두 주제를 따로 구독. 대상은 `coin/config.json`에서 바꾼다. `alert_presets`×`alert_coins`의 매수·매도, `alert_ut4h` 코인의 UT Bot 4시간봉 전환, 온체인 국면 변화. 지난 상태는 배포된 `coin.json`에 남겨 같은 신호를 두 번 보내지 않는다.
 - **UT Bot 설정**: `coin/config.json`의 `utbot`(일봉)·`utbot4h`(4시간봉) key·atr를 트레이딩뷰 설정과 맞춘다. 4시간봉은 트레이딩뷰와 같은 Key 5·ATR 20 (Key 1·ATR 10은 2018년부터 신호가 너무 잦아 손실). 일봉은 Key 1·ATR 10 유지 — 5·20으로 바꾸면 365일선 아래+MVRV 바닥권 조합 전략에서 매수가 0번이 됨.
 - 로컬 실행: `NTFY_DRY=1 node coin/build.mjs` (Node 18 이상) → `docs/coinhist.json`, `docs/coin.json`

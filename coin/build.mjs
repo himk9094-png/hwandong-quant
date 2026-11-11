@@ -10,7 +10,9 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const CE = createRequire(import.meta.url)(path.join(ROOT, "docs/coin-engine.js"));
 const CFG = JSON.parse(fs.readFileSync(path.join(ROOT, "coin/config.json"), "utf8"));
-const TOPIC = process.env.NTFY_TOPIC || JSON.parse(fs.readFileSync(path.join(ROOT, "config.json"), "utf8")).ntfy_topic;
+const ROOTCFG = JSON.parse(fs.readFileSync(path.join(ROOT, "config.json"), "utf8"));
+const TOPIC = process.env.NTFY_TOPIC_COIN || ROOTCFG.ntfy_topic_coin || ROOTCFG.ntfy_topic;   // 코인 알림 전용 주제(주식과 분리)
+const REG = TOPIC + "-reg";             // 앱의 '알림 받기'가 내 전략 목록을 보내는 주제(구독할 필요 없음)
 const DRY = !!process.env.NTFY_DRY;
 const START = "2012-01-01";                 // 데이터 시작(365일선·2년 백분위 준비 기간 포함)
 const BT4H_FROM = Date.UTC(2018, 0, 1);
@@ -203,6 +205,31 @@ for (const s of CFG.alert_coins) {
     }
   }
 }
+// 내 조합 전략 알림: 앱에서 '알림 받기'를 켜면 전략 목록 전체를 REG 주제로 보낸다 → 가장 최근 목록을 받아 매일 계산
+let mine = prev?.state?.mine || { t: 0, h: null, list: [] };
+try {
+  const r = await fetch(`https://ntfy.sh/${REG}/json?poll=1&since=all`, { signal: AbortSignal.timeout(20000) });
+  for (const ln of (await r.text()).split("\n")) {
+    let m, d; try { m = JSON.parse(ln); d = JSON.parse(m.message); } catch { continue; }
+    if (m.event !== "message" || !(m.time > mine.t) || d?.v !== 1 || typeof d.h !== "string" || !Array.isArray(d.list)) continue;
+    mine = { t: m.time, h: d.h, list: d.list.slice(0, 12) };
+  }
+} catch (e) { console.log("내 전략 등록 확인 실패:", e.message); }
+const mineChanged = !!prev && mine.h !== (prev.state.mine?.h ?? null);
+const mineNow = [];
+for (const m of mine.list) {
+  try {
+    const res = m.type === "mix" ? CE.mix(X, (m.items || []).map(it => ({ w: +it.w || 0, P: it.P })), +m.start || CFG.start) : CE.simulate(X, m.P);
+    if (!res) continue;
+    if (prev && prevLast !== null) for (const t of res.trades) if (t.i > prevLast)
+      events.push({ pri: 4, line: `[내 전략] ${m.name} · ${t.s} ${t.a === "buy" ? "매수" : "매도"} ${t.k} · ${usd(t.px)}${t.src ? ` · ${t.src}` : ""} (${t.why}) [${CE.dateAt(START, t.i).slice(5)} 종가]` });
+    if (m.type === "mix") { mineNow.push(`${m.name}: 묶음 ${(m.items || []).length}개 전략`); continue; }
+    const st = CE.status(X, res);
+    mineNow.push(`${m.name}: ` + Object.keys(st).map(s => { const x = st[s]; return `${s} ${x.hold > 0.001 ? "보유 " + Math.round(x.hold * 100) + "%" : "현금"}${x.sell ? " · 매도 조건 충족" : x.buy ? " · 매수 조건 충족" : ""}`; }).join(" / "));
+  } catch (e) { console.log(`내 전략 ${m.name} 계산 실패:`, e.message); }
+}
+console.log(`내 전략 알림 ${mine.list.length}개${mineChanged ? " (새로 바뀜)" : ""}`);
+
 const pc = CE.lastVal(CE.pctOf(X, "btc", CE.REGIME_W)), mv = CE.lastVal(X.oc.mvrv.btc);
 const regime = CE.regimeOf(pc.v);
 const regimeLine = `BTC MVRV ${mv.v?.toFixed(2)} · 최근 4년 중 하위 ${Math.round(pc.v)}%`;
@@ -221,7 +248,8 @@ for (const s of CE.COINS) {
 // ---------------------------------------------------------------- 4) 알림
 const click = CFG.site + "#coin";
 const alerts = (prev?.alerts || []).slice();
-if (!prev) {
+const hello = !prev || prev.cfg?.topic !== TOPIC;   // 첫 실행 또는 알림 주제가 바뀐 뒤 첫 실행
+if (hello) {
   const lines = [`온체인 국면: ${regime} (${regimeLine})`];
   for (const s of CFG.alert_coins) {
     const u = ut4h[s];
@@ -229,9 +257,17 @@ if (!prev) {
     lines.push(`${s} ${usd(X.coins[s].c[lastI])}${CFG.alert_ut4h.includes(s) ? ` · UT 4h ${u.pos === 1 ? "매수" : "매도"} 중` : ""} · ${ps}`);
   }
   lines.push("앞으로 새 신호가 생길 때만 알림이 옵니다.");
+  if (mine.list.length) lines.push("내 전략 알림: " + mine.list.map(m => m.name).join(", "));
   await send("환동퀀트 코인 알림 연결됨", lines.join("\n"), { click, tags: ["coin"] });
   alerts.unshift({ t: kst(Date.now()), title: "알림 연결됨", lines });
-} else if (events.length) {
+}
+if (mineChanged) {
+  const lines = mine.list.length ? ["매일 09시 일봉 마감 후 매수·매도가 생기면 알려드립니다.", ...mineNow] : ["내 전략 알림이 모두 꺼졌습니다."];
+  const title = mine.list.length ? `내 전략 알림 설정 · ${mine.list.length}개` : "내 전략 알림 꺼짐";
+  await send(title, lines.join("\n"), { click, tags: ["bell"] });
+  alerts.unshift({ t: kst(Date.now()), title, lines });
+}
+if (prev && events.length) {
   const lines = events.map(e => e.line);
   await send(`환동퀀트 코인 · 새 신호 ${events.length}건`, lines.join("\n"), { click, tags: ["coin"], priority: Math.max(...events.map(e => e.pri)) });
   alerts.unshift({ t: kst(Date.now()), title: `새 신호 ${events.length}건`, lines });
@@ -241,8 +277,9 @@ if (!prev) {
 for (const s in ut4h) delete ut4h[s].pos_;
 const out = {
   v: 1, generated: kst(Date.now()), lastDay, cmLast, ut4h, bt4h, alerts: alerts.slice(0, 30),
-  cfg: { alert_ut4h: CFG.alert_ut4h, alert_presets: CFG.alert_presets, alert_coins: CFG.alert_coins, backtest_only: CFG.backtest_only, start: CFG.start, utbot: CFG.utbot, utbot4h: UT4 },
-  state: { lastDay, regime, ut4h: utState },
+  mine: { h: mine.h, t: mine.t, names: mine.list.map(m => m.name) },
+  cfg: { topic: TOPIC, reg: REG, alert_ut4h: CFG.alert_ut4h, alert_presets: CFG.alert_presets, alert_coins: CFG.alert_coins, backtest_only: CFG.backtest_only, start: CFG.start, utbot: CFG.utbot, utbot4h: UT4 },
+  state: { lastDay, regime, ut4h: utState, mine },
 };
 fs.writeFileSync(path.join(ROOT, "docs/coin.json"), JSON.stringify(out));
 console.log(`coin.json 저장 · 국면 ${regime} (${regimeLine}) · 이벤트 ${events.length}건`);

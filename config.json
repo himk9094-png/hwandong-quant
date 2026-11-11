@@ -25,6 +25,7 @@
   },
   "fundamentals": "dart",
   "ntfy_topic": "hwandong-quant-67631we5vw",
+  "ntfy_topic_coin": "hwandong-quant-67631we5vw-coin",
   "alert_top_n": 5,
   "track_top_n": 20,
   "holdings": {

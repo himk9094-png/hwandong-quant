@@ -14,8 +14,31 @@ function save(L){try{localStorage.setItem(KEY,JSON.stringify(L));return true}cat
 function today(){return new Date(Date.now()+9*36e5).toISOString().slice(0,10)}
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,6)}
 function get(id){return load().filter(function(p){return p.id===id})[0]}
-function put(p){var L=load(),i=L.findIndex(function(x){return x.id===p.id});if(i>=0)L[i]=p;else L.push(p);return save(L)}
-function del(id){save(load().filter(function(p){return p.id!==id}))}
+function put(p){var L=load(),i=L.findIndex(function(x){return x.id===p.id});if(i>=0)L[i]=p;else L.push(p);var ok=save(L);if(ok)setTimeout(sync,0);return ok}
+function del(id){save(load().filter(function(p){return p.id!==id}));setTimeout(sync,0)}
+
+// ---------------------------------------------------------------- 내 전략 알림
+// '알림 받기'를 켠 전략 목록 전체를 ntfy 등록 주제로 보낸다 → GitHub Actions가 받아서 매일 계산하고 새 매수·매도를 알림.
+// 서버에 올라간 목록(coin.json의 mine.h)과 다르면 다시 보낸다(6시간 안에 같은 걸 보냈으면 대기).
+var SK="hq_coin_sync";
+function slim(p){var q={};["name","coins","buy","sell","oc","ocw","nb","gap","ns","lev","start","hold"].forEach(function(k){if(p[k]!=null)q[k]=p[k]});return q}
+function alertList(){var out=[];load().forEach(function(p){if(!p.alert)return;
+  if(p.type==="mix"){var items=p.items.map(function(it){var P=resolve(it.ref,it.cs);return P&&it.w>0?{w:it.w,P:slim(P)}:null}).filter(Boolean);if(items.length)out.push({id:p.id,name:p.name,type:"mix",start:p.start,items:items})}
+  else out.push({id:p.id,name:p.name,type:"rule",P:slim(p)})});return out}
+function hsh(t){var h=5381;for(var i=0;i<t.length;i++)h=((h*33)^t.charCodeAt(i))>>>0;return h.toString(36)}
+function alertHash(){return hsh(JSON.stringify(alertList()))}
+function registered(){return !!J&&((J.mine&&J.mine.h)||hsh("[]"))===alertHash()}
+function sync(force){
+  if(!J||!J.cfg||!J.cfg.reg)return Promise.resolve(false);
+  var list=alertList(),h=hsh(JSON.stringify(list));if(registered())return Promise.resolve(true);
+  var last={};try{last=JSON.parse(localStorage.getItem(SK)||"{}")}catch(e){}
+  if(!force&&last.h===h&&Date.now()-last.t<6*36e5)return Promise.resolve(false);
+  var msg=JSON.stringify({v:1,h:h,list:list});
+  if(new TextEncoder().encode(msg).length>3900){alert("알림 켠 전략이 너무 많아서 보낼 수 없습니다. 몇 개를 끄세요.");return Promise.resolve(false)}
+  try{localStorage.setItem(SK,JSON.stringify({h:h,t:Date.now()}))}catch(e){}       // 보내는 중 중복 전송 방지
+  return fetch("https://ntfy.sh/"+J.cfg.reg,{method:"POST",body:msg}).then(function(r){if(!r.ok)throw new Error(r.status);return false})
+    .catch(function(e){try{localStorage.removeItem(SK)}catch(x){}if(force)alert("알림 등록을 보내지 못했습니다("+e.message+"). 인터넷 연결을 확인하고 다시 눌러주세요.");return false});
+}
 
 // ---------------------------------------------------------------- 데이터
 function data(){
@@ -23,7 +46,7 @@ function data(){
   var t=Math.floor(Date.now()/9e5);
   loading=Promise.all([fetch("coinhist.json?t="+t).then(function(r){if(!r.ok)throw new Error(r.status);return r.json()}),
     fetch("coin.json?t="+t).then(function(r){return r.ok?r.json():null}).catch(function(){return null})])
-  .then(function(a){H=a[0];J=a[1];X=CE.prep(H);if(opt.start==null)opt.start=(H.cfg&&H.cfg.start)||2018});
+  .then(function(a){H=a[0];J=a[1];X=CE.prep(H);if(opt.start==null)opt.start=(H.cfg&&H.cfg.start)||2018;setTimeout(sync,1500)});
   loading.catch(function(e){loading=null;err=e});
   return loading;
 }
@@ -134,7 +157,7 @@ function mine(L){
   var P=load();
   if(!P.length){L.appendChild(el("div","empty","아직 없습니다. 위 전략 비교에서 전략을 눌러 '복제해서 수정'하거나 버튼으로 새로 만드세요. 이 기기 브라우저에 저장됩니다."));return}
   P.slice().reverse().forEach(function(p){
-    var b=el("button","card");b.type="button";var a=el("div","row1");a.appendChild(el("span","nm",p.name));a.appendChild(chip(p.type==="mix"?"묶음":"조건",p.type==="mix"?"st":""));b.appendChild(a);
+    var b=el("button","card");b.type="button";var a=el("div","row1");a.appendChild(el("span","nm",p.name));a.appendChild(chip(p.type==="mix"?"묶음":"조건",p.type==="mix"?"st":""));if(p.alert)a.appendChild(chip("🔔 알림"));b.appendChild(a);
     var r=run(p),s=r&&CE.stats(r.eq,r.expo),m=el("div","mets");m.style.marginLeft="0";
     if(s)[["누적",s.tot],["연",s.cagr],["MDD",s.mdd]].forEach(function(x){var t=el("span","met",x[0]);t.appendChild(el("b",cls(x[1]),p0(x[1])));m.appendChild(t)});
     b.appendChild(m);b.appendChild(el("div","small",(p.type==="mix"?mixDesc(p):ruleDesc(p))+" · 만든 날 "+p.created));
@@ -143,7 +166,7 @@ function mine(L){
 function alerts(L){
   if(!J)return;
   sec(L,"최근 알림");
-  var c=J.cfg||{};L.appendChild(el("p","desc","알림 대상: "+(c.alert_coins||[]).join("·")+" × "+(c.alert_presets||[]).map(function(id){var p=presetById(id);return p?p.name:id}).join(", ")+" · UT Bot 4시간봉 "+(c.alert_ut4h||[]).join("·")+" · 온체인 국면 변화. 내 조합 전략은 이 기기에만 있어서 알림이 가지 않습니다."));
+  var c=J.cfg||{};L.appendChild(el("p","desc","알림 대상: "+(c.alert_coins||[]).join("·")+" × "+(c.alert_presets||[]).map(function(id){var p=presetById(id);return p?p.name:id}).join(", ")+" · UT Bot 4시간봉 "+(c.alert_ut4h||[]).join("·")+" · 온체인 국면 변화 · 내 조합 전략 중 '알림 받기'를 켠 것"+(J.mine&&J.mine.names&&J.mine.names.length?" ("+J.mine.names.join(", ")+")":"")+". 코인 알림은 ntfy 주제 "+(c.topic||"–")+" 로 옵니다(주식 알림과 따로)."));
   var A=J.alerts||[];if(!A.length){L.appendChild(el("div","small","아직 없음"));return}
   A.slice(0,10).forEach(function(a){var c2=el("div","card");c2.appendChild(el("div","small",a.t+" · "+a.title));a.lines.forEach(function(x){c2.appendChild(el("div",null,x))});c2.style.fontSize="13px";L.appendChild(c2)});
 }
@@ -198,9 +221,14 @@ function renderOne(L){
   var top=el("div","pfbar");
   var btn=[["← 코인",function(){cur=null;Q.render()}]];
   if(isP)btn.push(["복제해서 수정",function(){editRule(fromPreset(p))}]);
-  else btn.push(["수정",function(){p.type==="mix"?editMix(p):editRule(p)}],["복제",function(){var q=JSON.parse(JSON.stringify(p));q.id=uid();q.name+=" 사본";q.created=today();put(q);cur={k:"my",id:q.id};Q.render()}],["삭제",function(){if(confirm("'"+p.name+"' 삭제할까요?")){del(p.id);cur=null;Q.render()}}]);
+  else btn.push(["수정",function(){p.type==="mix"?editMix(p):editRule(p)}],["복제",function(){var q=JSON.parse(JSON.stringify(p));q.id=uid();q.name+=" 사본";q.created=today();q.alert=false;put(q);cur={k:"my",id:q.id};Q.render()}],["삭제",function(){if(confirm("'"+p.name+"' 삭제할까요?"+(p.alert?" (알림도 꺼집니다)":""))){del(p.id);cur=null;Q.render()}}],
+    [p.alert?"🔔 알림 켜짐":"🔕 알림 받기",function(){
+      if(p.alert&&!confirm("'"+p.name+"' 알림을 끌까요?"))return;
+      p.alert=!p.alert;put(p);sync(true).then(function(){
+        alert(p.alert?"알림을 켰습니다. 보통 30분 안에 등록되고 ntfy로 '내 전략 알림 설정' 확인이 옵니다. 그 뒤로는 매일 09시 일봉 마감 후 새 매수·매도가 생기면 알려드립니다.":"알림을 껐습니다. 30분 안에 반영됩니다.");Q.render()})}]);
   btn.forEach(function(x){var b=el("button","tgl",x[0]);b.onclick=x[1];top.appendChild(b)});L.appendChild(top);
   sec(L,p.name);L.appendChild(el("p","desc",isP?p.d:p.type==="mix"?mixDesc(p):ruleDesc(p)));
+  if(!isP&&p.alert)L.appendChild(el("div","small",registered()?"🔔 알림 등록됨 · 매일 09시 일봉 마감 후 새 매수·매도를 ntfy 코인 알림으로 보냅니다.":"🔔 알림 등록 대기 중 · 보통 30분 안에 반영됩니다 (반영되면 확인 알림이 옵니다)."));
   var start=isP?opt.start:(+p.start||opt.start),lev=isP?opt.lev:null,P;
   if(isP){var cb=controls(function(){Q.render()}),cs=el("select");SETS.forEach(function(s){var o=el("option",null,s[1]);o.value=s[0];if(s[0]===opt.cs)o.selected=true;cs.appendChild(o)});cs.onchange=function(){opt.cs=cs.value;Q.render()};cb.insertBefore(cs,cb.firstChild);L.appendChild(cb);
     P=Object.assign({},p,{coins:setOf(opt.cs)})}

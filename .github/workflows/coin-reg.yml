@@ -1,0 +1,30 @@
+name: coin-reg
+
+# 30분마다: 앱에서 '알림 받기'를 켜고 끈 게 있으면(ntfy 등록 주제에 새 메시지) 코인 작업을 바로 돌려 반영·확인 알림
+on:
+  schedule:
+    - cron: "7,37 * * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 새 등록 메시지 확인
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          base="https://${GITHUB_REPOSITORY_OWNER,,}.github.io/${GITHUB_REPOSITORY#*/}"
+          j=$(curl -sf "$base/coin.json?t=$(date +%s)") || { echo "coin.json 없음"; exit 0; }
+          reg=$(echo "$j" | jq -r '.cfg.reg // empty'); last=$(echo "$j" | jq -r '.mine.t // 0')
+          [ -z "$reg" ] && { echo "등록 주제 없음"; exit 0; }
+          new=$(curl -sf "https://ntfy.sh/$reg/json?poll=1&since=all" | jq -s "[.[]|select(.event==\"message\" and .time>$last)]|length")
+          echo "새 등록 메시지: ${new:-0}"
+          if [ "${new:-0}" -gt 0 ]; then
+            if gh run list -R "$GITHUB_REPOSITORY" -w coin.yml -L 5 --json status -q '.[].status' | grep -qE "queued|in_progress|waiting"; then echo "코인 작업 이미 도는 중"; else gh workflow run coin.yml -R "$GITHUB_REPOSITORY"; fi
+          fi
