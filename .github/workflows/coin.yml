@@ -31,7 +31,7 @@ jobs:
       - name: 지난 알림 상태 가져오기
         run: |
           base="https://${GITHUB_REPOSITORY_OWNER,,}.github.io/${GITHUB_REPOSITORY#*/}"
-          curl -sf "$base/coin.json" -o /tmp/coin.prev.json || echo "이전 상태 없음 (첫 실행)"
+          curl -sf "$base/coin.json?t=$(date +%s)" -o /tmp/coin.prev.json || echo "이전 상태 없음 (첫 실행)"
       - name: 계산·알림
         run: node coin/build.mjs /tmp/coin.prev.json
       - name: 현재 주식 데이터 가져오기 (같이 배포해야 사라지지 않음)
