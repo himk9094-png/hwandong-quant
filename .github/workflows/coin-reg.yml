@@ -26,5 +26,5 @@ jobs:
           new=$(curl -sf "https://ntfy.sh/$reg/json?poll=1&since=all" | jq -s "[.[]|select(.event==\"message\" and .time>$last)]|length")
           echo "새 등록 메시지: ${new:-0}"
           if [ "${new:-0}" -gt 0 ]; then
-            if gh run list -R "$GITHUB_REPOSITORY" -w coin.yml -L 5 --json status -q '.[].status' | grep -qE "queued|in_progress|waiting"; then echo "코인 작업 이미 도는 중"; else gh workflow run coin.yml -R "$GITHUB_REPOSITORY"; fi
+            if gh run list -R "$GITHUB_REPOSITORY" -w coin.yml -L 5 --json status -q '.[].status' | grep -qE "queued|in_progress|waiting"; then echo "코인 작업 이미 도는 중"; else gh workflow run coin.yml -R "$GITHUB_REPOSITORY" --ref main; fi
           fi
