@@ -22,6 +22,7 @@ const BIN = "https://data-api.binance.vision/api/v3/klines";   // 시세 전용 
 const CM = "https://community-api.coinmetrics.io/v4/timeseries/asset-metrics";
 const H4 = 4 * 3600e3;
 const UT4 = CFG.utbot4h || CFG.utbot;   // 4시간봉 UT 설정(없으면 일봉 설정)
+const ut4Of = s => ({ key: (UT4.coins?.[s] || UT4).key, atr: (UT4.coins?.[s] || UT4).atr });   // 코인별 설정이 있으면 그것
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const isn = CE.isn;
@@ -131,7 +132,7 @@ const oc = {
   },
   xrp: { mvrv: series(cm.xrp, num("CapMVRVCur")).map(v => sig(v, 5)) },
 };
-const H = { v: 1, start: START, n, last: lastDay, cmLast, generated: kst(Date.now()), cfg: { utKey: CFG.utbot.key, utAtr: CFG.utbot.atr, ut4Key: UT4.key, ut4Atr: UT4.atr, start: CFG.start, btOnly: CFG.backtest_only }, coins, oc };
+const H = { v: 1, start: START, n, last: lastDay, cmLast, generated: kst(Date.now()), cfg: { utKey: CFG.utbot.key, utAtr: CFG.utbot.atr, ut4Key: UT4.key, ut4Atr: UT4.atr, ut4: Object.fromEntries(CE.COINS.map(s => [s, ut4Of(s)])), start: CFG.start, btOnly: CFG.backtest_only }, coins, oc };
 
 
 // ---------------------------------------------------------------- 2) 4시간봉 UT Bot (현재 상태 + 2018년부터 백테스트)
@@ -159,7 +160,7 @@ function holdStats(k, lev) {
 for (const s of CE.COINS) {
   const k = await klines(SYM[s], "4h", Date.UTC(2017, 11, 1));
   B4[s] = k;
-  const u = CE.utbot(k.map(b => b.c), k.map(b => b.h), k.map(b => b.l), UT4.key, UT4.atr);
+  const u4c = ut4Of(s), u = CE.utbot(k.map(b => b.c), k.map(b => b.h), k.map(b => b.l), u4c.key, u4c.atr);
   const L = k.length - 1;
   let since = L; while (since > 0 && u.pos[since - 1] === u.pos[L]) since--;
   ut4h[s] = { pos: u.pos[L], stop: sig(u.stop[L]), px: k[L].c, bar: kst(k[L].T + 1), since: kst(k[since].T + 1), sincePx: k[since].c, pos_: u.pos };

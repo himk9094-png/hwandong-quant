@@ -1,7 +1,7 @@
 {
   "start": 2018,
   "utbot": {"key": 2, "atr": 20},
-  "utbot4h": {"key": 5, "atr": 20},
+  "utbot4h": {"key": 5, "atr": 20, "coins": {"ETH": {"key": 7, "atr": 20}, "SOL": {"key": 5, "atr": 20}}},
   "alert_ut4h": ["ETH", "SOL"],
   "alert_presets": ["mr_oc", "mr"],
   "alert_coins": ["BTC", "ETH", "SOL"],
