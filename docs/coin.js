@@ -243,11 +243,13 @@ var O={
  rsi:[[0,"안 씀"],[25,"25 미만"],[30,"30 미만"],[35,"35 미만"],[40,"40 미만"],[50,"50 미만"]],
  mvrv:[[0,"안 씀"],[1,"하위 1%"],[5,"하위 5%"],[10,"하위 10%"],[20,"하위 20%"],[30,"하위 30%"],[50,"하위 50%"]],
  ut:[[0,"안 씀"],[1,"UT Bot 일봉 매수 상태"]],
+ ut4:[[0,"안 씀"],[1,"UT Bot 4시간봉 매수 상태"]],
  hr:[[0,"안 씀"],[1,"채굴자 항복 중 또는 회복 30일 이내"]],
  ext:[[0,"안 씀"],[30,"+30% 이상"],[50,"+50% 이상"],[80,"+80% 이상"],[100,"+100% 이상"]],
  rsiS:[[0,"안 씀"],[70,"70 초과"],[75,"75 초과"],[80,"80 초과"]],
  mvrvS:[[0,"안 씀"],[70,"상위 30%"],[80,"상위 20%"],[90,"상위 10%"],[95,"상위 5%"]],
  utS:[[0,"안 씀"],[1,"UT Bot 일봉 매도 신호"]],
+ ut4S:[[0,"안 씀"],[1,"UT Bot 4시간봉 매도 신호"]],
  maS:[["","안 씀"],["below200","200일선 아래로 이탈"],["below365","365일선 아래로 이탈"]],
  stop:[[0,"안 씀"],[10,"−10%"],[15,"−15%"],[20,"−20%"],[30,"−30%"],[50,"−50%"]],
  oc:[["btc","BTC MVRV"],["own","코인 자체 MVRV (SOL은 BTC로)"]],
@@ -261,8 +263,8 @@ function lab(list,v){var x=list.filter(function(o){return String(o[0])===String(
 function coinsTxt(c){return CE.COINS.filter(function(s){return +c[s]>0}).map(function(s){var vals=CE.COINS.map(function(k){return +c[k]||0}).filter(Boolean);return s+(vals.some(function(v){return v!==vals[0]})?" "+c[s]:"")}).join("·")}
 function ruleDesc(p){
   var b=p.buy||{},s=p.sell||{},bb=[],ss=[],w=(+p.ocw||730)/365+"년";
-  if(b.ma)bb.push(lab(O.ma,b.ma));if(b.rsi)bb.push("RSI "+b.rsi+" 미만");if(b.mvrv)bb.push("MVRV "+w+" 하위 "+b.mvrv+"%");if(b.ut)bb.push("UT 일봉 매수");if(b.hr)bb.push("해시리본");
-  if(s.ext)ss.push("21일선 365일선 +"+s.ext+"%");if(s.rsi)ss.push("RSI "+s.rsi+" 초과");if(s.mvrv)ss.push("MVRV 상위 "+(100-s.mvrv)+"%");if(s.ut)ss.push("UT 일봉 매도");if(s.ma)ss.push(lab(O.maS,s.ma));if(s.stop)ss.push("손절 −"+s.stop+"%");
+  if(b.ma)bb.push(lab(O.ma,b.ma));if(b.rsi)bb.push("RSI "+b.rsi+" 미만");if(b.mvrv)bb.push("MVRV "+w+" 하위 "+b.mvrv+"%");if(b.ut)bb.push("UT 일봉 매수");if(b.ut4)bb.push("UT 4h 매수");if(b.hr)bb.push("해시리본");
+  if(s.ext)ss.push("21일선 365일선 +"+s.ext+"%");if(s.rsi)ss.push("RSI "+s.rsi+" 초과");if(s.mvrv)ss.push("MVRV 상위 "+(100-s.mvrv)+"%");if(s.ut)ss.push("UT 일봉 매도");if(s.ut4)ss.push("UT 4h 매도");if(s.ma)ss.push(lab(O.maS,s.ma));if(s.stop)ss.push("손절 −"+s.stop+"%");
   return coinsTxt(p.coins||{})+" · 매수 "+(bb.join("+")||"없음")+(p.nb>1?" ("+p.nb+"분할·"+p.gap+"일)":"")+" · 매도 "+(ss.join(" 또는 ")||"없음")+(p.ns>1?" ("+p.ns+"분할)":"")+(p.lev?" · 2배 ETF":"")+" · "+p.start+"년부터"}
 function mixDesc(p){return p.items.map(function(it){var P=resolve(it.ref,it.cs);return (P?P.name:"(삭제된 전략)")+" "+it.w}).join(" + ")+" · "+p.start+"년부터"}
 function mixCoins(p){var c={};p.items.forEach(function(it){var P=resolve(it.ref,it.cs);if(P)Object.keys(P.coins).forEach(function(s){if(+P.coins[s]>0)c[s]=1})});return Object.keys(c).length?c:{BTC:1}}
@@ -282,14 +284,14 @@ function editRule(p0_){
   B.appendChild(el("div","sec","코인 비중 (0이면 제외, 숫자 비율)"));
   var cw={};CE.COINS.forEach(function(s){var i=el("input");i.type="number";i.min="0";i.step="any";i.value=+(p.coins[s]||0);i.className="pfw";cw[s]=field(B,s+" "+NM[s]+(btOnly(s)?" (백테스트용)":""),i)});
   B.appendChild(el("div","sec","매수 조건 (고른 것 모두 충족)"));
-  var f={ma:field(B,"이동평균",sel(O.ma,p.buy.ma||"")),rsi:field(B,"RSI(14, 일봉)",sel(O.rsi,p.buy.rsi||0)),mvrv:field(B,"온체인 MVRV",sel(O.mvrv,p.buy.mvrv||0)),ut:field(B,"UT Bot",sel(O.ut,p.buy.ut||0)),hr:field(B,"해시리본",sel(O.hr,p.buy.hr||0))};
+  var f={ma:field(B,"이동평균",sel(O.ma,p.buy.ma||"")),rsi:field(B,"RSI(14, 일봉)",sel(O.rsi,p.buy.rsi||0)),mvrv:field(B,"온체인 MVRV",sel(O.mvrv,p.buy.mvrv||0)),ut:field(B,"UT Bot 일봉",sel(O.ut,p.buy.ut||0)),ut4:field(B,"UT Bot 4시간봉",sel(O.ut4,p.buy.ut4||0)),hr:field(B,"해시리본",sel(O.hr,p.buy.hr||0))};
   B.appendChild(el("div","sec","매도 조건 (하나라도 충족)"));
-  var g={ext:field(B,"과열: 21일선이 365일선보다",sel(O.ext,p.sell.ext||0)),rsi:field(B,"RSI 과열",sel(O.rsiS,p.sell.rsi||0)),mvrv:field(B,"온체인 MVRV 과열",sel(O.mvrvS,p.sell.mvrv||0)),ut:field(B,"UT Bot",sel(O.utS,p.sell.ut||0)),ma:field(B,"이동평균 이탈",sel(O.maS,p.sell.ma||"")),stop:field(B,"손절 (평균 매수가 대비)",sel(O.stop,p.sell.stop||0))};
+  var g={ext:field(B,"과열: 21일선이 365일선보다",sel(O.ext,p.sell.ext||0)),rsi:field(B,"RSI 과열",sel(O.rsiS,p.sell.rsi||0)),mvrv:field(B,"온체인 MVRV 과열",sel(O.mvrvS,p.sell.mvrv||0)),ut:field(B,"UT Bot 일봉",sel(O.utS,p.sell.ut||0)),ut4:field(B,"UT Bot 4시간봉",sel(O.ut4S,p.sell.ut4||0)),ma:field(B,"이동평균 이탈",sel(O.maS,p.sell.ma||"")),stop:field(B,"손절 (평균 매수가 대비)",sel(O.stop,p.sell.stop||0))};
   B.appendChild(el("div","sec","온체인 기준 · 분할 · 기타"));
   var oc=field(B,"MVRV 종류",sel(O.oc,p.oc||"btc")),ocw=field(B,"MVRV 비교 기간",sel(O.ocw,p.ocw||1460));
   var nb=field(B,"매수 분할",sel(O.nb,p.nb)),gap=field(B,"분할 간격(최소)",sel(O.gap,p.gap)),ns=field(B,"매도 분할",sel(O.ns,p.ns));
   var lv=field(B,"상품",sel(O.lev,p.lev?1:0)),st=field(B,"백테스트 시작",sel(years(),p.start));
-  B.appendChild(el("p","desc","분할 매수: 조건이 켜질 때마다 처음 현금의 1/N씩, 최소 간격을 두고 삽니다. 분할 매도: 조건이 켜지면 남은 수량을 나눠 팝니다(손절은 전량). 매도 조건이 켜진 날엔 새로 사지 않습니다."));
+  B.appendChild(el("p","desc","분할 매수: 조건이 켜질 때마다 처음 현금의 1/N씩, 최소 간격을 두고 삽니다. 분할 매도: 조건이 켜지면 남은 수량을 나눠 팝니다(손절은 전량). 매도 조건이 켜진 날엔 새로 사지 않습니다. UT Bot 4시간봉은 매일 일봉 마감(한국시간 09시) 시점의 상태로 판단합니다(하루 중간의 전환은 반영 안 됨)."));
   var sv=el("button","pfsave","저장하고 백테스트");B.appendChild(sv);
   sv.onclick=function(){
     var coins={},any=false;CE.COINS.forEach(function(s){var v=+cw[s].value||0;if(v>0){coins[s]=v;any=true}});if(!any){alert("코인을 하나 이상 넣으세요.");return}

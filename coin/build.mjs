@@ -130,19 +130,6 @@ const oc = {
 };
 const H = { v: 1, start: START, n, last: lastDay, cmLast, generated: kst(Date.now()), cfg: { utKey: CFG.utbot.key, utAtr: CFG.utbot.atr, start: CFG.start, btOnly: CFG.backtest_only }, coins, oc };
 
-function pack(a) {
-  if (!a) return null;
-  let o = a.findIndex(isn); if (o < 0) return { o: 0, v: [] };
-  let e = a.length - 1; while (e >= 0 && !isn(a[e])) e--;
-  return { o, v: a.slice(o, e + 1) };
-}
-const packed = { ...H, coins: {}, oc: {} };
-for (const s of CE.COINS) packed.coins[s] = { c: pack(coins[s].c), h: pack(coins[s].h), l: pack(coins[s].l), bin: coins[s].bin };
-for (const a in oc) { packed.oc[a] = {}; for (const k in oc[a]) packed.oc[a][k] = pack(oc[a][k]); }
-fs.writeFileSync(path.join(ROOT, "docs/coinhist.json"), JSON.stringify(packed));
-console.log(`coinhist.json ${(fs.statSync(path.join(ROOT, "docs/coinhist.json")).size / 1024).toFixed(0)}KB · 마지막 일봉 ${lastDay} · 온체인 ${cmLast}`);
-
-const X = CE.prep(H);
 
 // ---------------------------------------------------------------- 2) 4시간봉 UT Bot (현재 상태 + 2018년부터 백테스트)
 console.log("바이낸스 4시간봉…");
@@ -174,8 +161,27 @@ for (const s of CE.COINS) {
   let since = L; while (since > 0 && u.pos[since - 1] === u.pos[L]) since--;
   ut4h[s] = { pos: u.pos[L], stop: sig(u.stop[L]), px: k[L].c, bar: kst(k[L].T + 1), since: kst(k[since].T + 1), sincePx: k[since].c, pos_: u.pos };
   bt4h[s] = { from: new Date(Math.max(BT4H_FROM, k[0].t)).toISOString().slice(0, 10), x1: bt(k, u.pos, false), x2: bt(k, u.pos, true), hold: holdStats(k, false), hold2: holdStats(k, true) };
+  // 일봉 마감 시점(한국시간 09시)의 4시간봉 UT 상태 → 조합 전략용 (그날 마지막 4시간봉 값)
+  const u4 = nul();
+  for (let j = 0; j < k.length; j++) { const i = at(k[j].t); if (i >= 0 && i < n && isn(u.pos[j])) u4[i] = u.pos[j]; }
+  coins[s].u4 = u4;
   console.log(`  ${s} ${k.length}봉 · UT ${u.pos[L] === 1 ? "매수" : "매도"} 중 (${ut4h[s].since}~)`);
 }
+
+// ---------------------------------------------------------------- 저장 (일봉·온체인·4시간봉 UT 상태)
+function pack(a) {
+  if (!a) return null;
+  let o = a.findIndex(isn); if (o < 0) return { o: 0, v: [] };
+  let e = a.length - 1; while (e >= 0 && !isn(a[e])) e--;
+  return { o, v: a.slice(o, e + 1) };
+}
+const packed = { ...H, coins: {}, oc: {} };
+for (const s of CE.COINS) packed.coins[s] = { c: pack(coins[s].c), h: pack(coins[s].h), l: pack(coins[s].l), u4: pack(coins[s].u4), bin: coins[s].bin };
+for (const a in oc) { packed.oc[a] = {}; for (const k in oc[a]) packed.oc[a][k] = pack(oc[a][k]); }
+fs.writeFileSync(path.join(ROOT, "docs/coinhist.json"), JSON.stringify(packed));
+console.log(`coinhist.json ${(fs.statSync(path.join(ROOT, "docs/coinhist.json")).size / 1024).toFixed(0)}KB · 마지막 일봉 ${lastDay} · 온체인 ${cmLast}`);
+
+const X = CE.prep(H);
 
 // ---------------------------------------------------------------- 3) 새 신호 찾기
 const events = [];

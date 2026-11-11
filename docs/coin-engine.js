@@ -54,11 +54,11 @@ function rollPct(a,win,minN){var n=a.length,o=nul(n);minN=minN||Math.floor(win/2
 function unpack(a,n){if(!a)return null;if(Array.isArray(a))return a;var o=nul(n);for(var k=0;k<a.v.length;k++)o[a.o+k]=a.v[k];return o}  // {o:시작칸, v:값들} → 전체 길이 배열
 function prep(H0){
   var n=H0.n,H={n:n,start:H0.start,last:H0.last,cfg:H0.cfg,coins:{},oc:{}};
-  Object.keys(H0.coins).forEach(function(s){var d=H0.coins[s];H.coins[s]={c:unpack(d.c,n),h:unpack(d.h,n),l:unpack(d.l,n),bin:d.bin}});
+  Object.keys(H0.coins).forEach(function(s){var d=H0.coins[s];H.coins[s]={c:unpack(d.c,n),h:unpack(d.h,n),l:unpack(d.l,n),u4:unpack(d.u4,n),bin:d.bin}});
   Object.keys(H0.oc).forEach(function(a){var d=H0.oc[a],o={};Object.keys(d).forEach(function(k){o[k]=unpack(d[k],n)});H.oc[a]=o});
   var cfg=H.cfg||{},X={n:n,start:H.start,last:H.last,coins:{},oc:{},cfg:cfg};
   COINS.forEach(function(s){var d=H.coins[s];if(!d)return;var c=d.c;var u=utbot(c,d.h,d.l,cfg.utKey,cfg.utAtr);
-    X.coins[s]={c:c,s21:sma(c,21),s200:sma(c,200),s365:sma(c,365),rsi:rsi(c,14),ut:u.pos,uts:u.stop,first:firstIdx(c),bin:d.bin}});
+    X.coins[s]={c:c,s21:sma(c,21),s200:sma(c,200),s365:sma(c,365),rsi:rsi(c,14),ut:u.pos,uts:u.stop,ut4:d.u4||nul(n),first:firstIdx(c),bin:d.bin}});
   var b=H.oc.btc,o=X.oc;
   o.mvrv={btc:b.mvrv,eth:H.oc.eth&&H.oc.eth.mvrv,xrp:H.oc.xrp&&H.oc.xrp.mvrv};
   o.pctW={};o.pct={btc:pctOf(X,"btc",730),eth:pctOf(X,"eth",730),xrp:pctOf(X,"xrp",730)};
@@ -98,6 +98,7 @@ function buyOk(X,P,sym,i,why){var C=X.coins[sym],b=P.buy,px=C.c[i],any=false;
   if(b.rsi){var r=C.rsi[i];if(!isn(r)||r>=b.rsi)return false;any=true;if(why)why.push("RSI "+Math.round(r))}
   if(b.mvrv){var p=ocPct(X,P,sym,i);if(!isn(p)||p>b.mvrv)return false;any=true;if(why)why.push("MVRV "+(P.ocw/365)+"년 하위 "+Math.round(p)+"%")}
   if(b.ut){if(C.ut[i]!==1)return false;any=true;if(why)why.push("UT 매수")}
+  if(b.ut4){if(C.ut4[i]!==1)return false;any=true;if(why)why.push("UT 4h 매수")}     // 4시간봉 UT: 그날 일봉 마감(09시) 시점 상태
   if(b.hr){var z=X.oc.hzone[i-1];if(z!==true)return false;any=true;if(why)why.push("해시리본")}
   return any}
 function sellOk(X,P,sym,i,pnl,why){var C=X.coins[sym],s=P.sell,px=C.c[i],hit=false;
@@ -105,6 +106,7 @@ function sellOk(X,P,sym,i,pnl,why){var C=X.coins[sym],s=P.sell,px=C.c[i],hit=fal
   if(s.rsi){var r=C.rsi[i];if(isn(r)&&r>s.rsi){hit=true;if(why)why.push("RSI "+Math.round(r))}}
   if(s.mvrv){var p=ocPct(X,P,sym,i);if(isn(p)&&p>=s.mvrv){hit=true;if(why)why.push("MVRV "+(P.ocw/365)+"년 상위 "+Math.round(100-p)+"%")}}
   if(s.ut&&C.ut[i]===-1){hit=true;if(why)why.push("UT 매도")}
+  if(s.ut4&&C.ut4[i]===-1){hit=true;if(why)why.push("UT 4h 매도")}
   if(s.ma){var m=MA[s.ma],v=C[m[0]][i];if(isn(v)&&(m[1]>0?px>v:px<v)){hit=true;if(why)why.push((m[0]==="s200"?"200":"365")+"일선 이탈")}}
   if(s.stop&&pnl!=null&&pnl<=-s.stop/100){hit=true;if(why)why.push("손절 "+fmtP(pnl))}
   return hit}
