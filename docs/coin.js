@@ -115,16 +115,18 @@ function mvrvChart(){
 }
 function coinTable(L){
   sec(L,"코인 현황");
-  var t=table(["코인","일봉 종가","365일선","RSI","UT Bot"]),i=X.n-1;
+  var t=table(["코인","일봉 종가","365일선","RSI","UT 4h","UT 1D"]),i=X.n-1;t.className="scrollt";
   CE.COINS.forEach(function(s){var C=X.coins[s];if(!C)return;var tr=el("tr"),px=C.c[i],u=J&&J.ut4h&&J.ut4h[s];
     tr.appendChild(td2(s,btOnly(s)?"백테스트용":NM[s]));
     var ch=rel(px,C.c[i-1]);tr.appendChild(td2(usd(px),F.sp(ch),""));tr.lastChild.lastChild.className="small "+cls(ch);
     var r365=rel(px,C.s365[i]),r200=rel(px,C.s200[i]);tr.appendChild(td2(F.sp(r365),"200일 "+F.sp(r200),cls(r365)));
     var rs=C.rsi[i];tr.appendChild(td2(CE.isn(rs)?Math.round(rs)+"":"–","",rs<30?"good":rs>70?"up":""));
-    var ud=C.ut[i];tr.appendChild(td2("4h "+(u?utTxt(u.pos):"–"),"1D "+utTxt(ud),u?(u.pos===1?"up":"dn"):""));
+    tr.appendChild(td2(u?utTxt(u.pos):"–",u&&u.since?u.since.slice(5,10).replace("-","/")+"~":"",u?(u.pos===1?"up":"dn"):""));
+    var ud=C.ut[i],k=i;while(k>0&&C.ut[k-1]===ud)k--;              // 1D: 지금 상태가 시작된 날
+    tr.appendChild(td2(utTxt(ud),CE.isn(ud)&&ud!==0?D(k).slice(5).replace("-","/")+"~":"",ud===1?"up":ud===-1?"dn":""));
     tr.style.cursor="pointer";tr.onclick=function(){openCoin(s)};t.appendChild(tr)});
   L.appendChild(wrap(t));
-  L.appendChild(el("div","small","코인을 누르면 차트·전략별 지금 상태. 365일선·200일선 = 종가가 이동평균보다 몇 % 위/아래인지. RSI 초록 30 미만(과매도), 빨강 70 초과. UT Bot 설정 1D Key "+X.cfg.utKey+" · ATR "+X.cfg.utAtr+(X.cfg.ut4Key?" / 4h Key "+X.cfg.ut4Key+" · ATR "+X.cfg.ut4Atr:"")+"."));
+  L.appendChild(el("div","small","코인을 누르면 차트·전략별 지금 상태. 365일선·200일선 = 종가가 이동평균보다 몇 % 위/아래인지. RSI 초록 30 미만(과매도), 빨강 70 초과. UT 아래 날짜 = 그 상태가 시작된 때. 표가 넘치면 옆으로 밀어서 보기. UT Bot 설정 1D Key "+X.cfg.utKey+" · ATR "+X.cfg.utAtr+(X.cfg.ut4Key?" / 4h Key "+X.cfg.ut4Key+" · ATR "+X.cfg.ut4Atr:"")+"."));
 }
 function compare(L){
   sec(L,"전략 비교 (백테스트)");
