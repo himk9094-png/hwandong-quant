@@ -19,6 +19,7 @@ const NAME = { BTC: "비트코인", ETH: "이더리움", SOL: "솔라나", XRP: 
 const BIN = "https://data-api.binance.vision/api/v3/klines";   // 시세 전용 주소(미국 서버에서도 열림)
 const CM = "https://community-api.coinmetrics.io/v4/timeseries/asset-metrics";
 const H4 = 4 * 3600e3;
+const UT4 = CFG.utbot4h || CFG.utbot;   // 4시간봉 UT 설정(없으면 일봉 설정)
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const isn = CE.isn;
@@ -128,7 +129,7 @@ const oc = {
   },
   xrp: { mvrv: series(cm.xrp, num("CapMVRVCur")).map(v => sig(v, 5)) },
 };
-const H = { v: 1, start: START, n, last: lastDay, cmLast, generated: kst(Date.now()), cfg: { utKey: CFG.utbot.key, utAtr: CFG.utbot.atr, start: CFG.start, btOnly: CFG.backtest_only }, coins, oc };
+const H = { v: 1, start: START, n, last: lastDay, cmLast, generated: kst(Date.now()), cfg: { utKey: CFG.utbot.key, utAtr: CFG.utbot.atr, ut4Key: UT4.key, ut4Atr: UT4.atr, start: CFG.start, btOnly: CFG.backtest_only }, coins, oc };
 
 
 // ---------------------------------------------------------------- 2) 4시간봉 UT Bot (현재 상태 + 2018년부터 백테스트)
@@ -156,7 +157,7 @@ function holdStats(k, lev) {
 for (const s of CE.COINS) {
   const k = await klines(SYM[s], "4h", Date.UTC(2017, 11, 1));
   B4[s] = k;
-  const u = CE.utbot(k.map(b => b.c), k.map(b => b.h), k.map(b => b.l), CFG.utbot.key, CFG.utbot.atr);
+  const u = CE.utbot(k.map(b => b.c), k.map(b => b.h), k.map(b => b.l), UT4.key, UT4.atr);
   const L = k.length - 1;
   let since = L; while (since > 0 && u.pos[since - 1] === u.pos[L]) since--;
   ut4h[s] = { pos: u.pos[L], stop: sig(u.stop[L]), px: k[L].c, bar: kst(k[L].T + 1), since: kst(k[since].T + 1), sincePx: k[since].c, pos_: u.pos };
@@ -240,7 +241,7 @@ if (!prev) {
 for (const s in ut4h) delete ut4h[s].pos_;
 const out = {
   v: 1, generated: kst(Date.now()), lastDay, cmLast, ut4h, bt4h, alerts: alerts.slice(0, 30),
-  cfg: { alert_ut4h: CFG.alert_ut4h, alert_presets: CFG.alert_presets, alert_coins: CFG.alert_coins, backtest_only: CFG.backtest_only, start: CFG.start, utbot: CFG.utbot },
+  cfg: { alert_ut4h: CFG.alert_ut4h, alert_presets: CFG.alert_presets, alert_coins: CFG.alert_coins, backtest_only: CFG.backtest_only, start: CFG.start, utbot: CFG.utbot, utbot4h: UT4 },
   state: { lastDay, regime, ut4h: utState },
 };
 fs.writeFileSync(path.join(ROOT, "docs/coin.json"), JSON.stringify(out));

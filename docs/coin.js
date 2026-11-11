@@ -96,7 +96,7 @@ function coinTable(L){
     var ud=C.ut[i];tr.appendChild(td2("4h "+(u?utTxt(u.pos):"–"),"1D "+utTxt(ud),u?(u.pos===1?"up":"dn"):""));
     tr.style.cursor="pointer";tr.onclick=function(){openCoin(s)};t.appendChild(tr)});
   L.appendChild(wrap(t));
-  L.appendChild(el("div","small","코인을 누르면 차트·전략별 지금 상태. 365일선·200일선 = 종가가 이동평균보다 몇 % 위/아래인지. RSI 초록 30 미만(과매도), 빨강 70 초과. UT Bot 설정 Key "+X.cfg.utKey+" · ATR "+X.cfg.utAtr+"."));
+  L.appendChild(el("div","small","코인을 누르면 차트·전략별 지금 상태. 365일선·200일선 = 종가가 이동평균보다 몇 % 위/아래인지. RSI 초록 30 미만(과매도), 빨강 70 초과. UT Bot 설정 1D Key "+X.cfg.utKey+" · ATR "+X.cfg.utAtr+(X.cfg.ut4Key?" / 4h Key "+X.cfg.ut4Key+" · ATR "+X.cfg.ut4Atr:"")+"."));
 }
 function compare(L){
   sec(L,"전략 비교 (백테스트)");

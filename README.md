@@ -60,5 +60,5 @@ python -m http.server -d docs      # http://localhost:8000
 - **프리셋**: 단순 보유 · 200일선 추세 · 역추세 기본(365일선 아래+RSI 30 미만 4분할 매수, 21일선이 365일선 +50%면 2분할 매도) · 역추세+온체인 · 온체인 단독 · UT Bot 일봉. 지표·전략 계산은 `docs/coin-engine.js` 하나를 브라우저와 알림이 같이 쓴다.
 - **내 조합 전략**: 조건 전략(코인 비중·매수 조건 AND·매도 조건 OR·분할·2배 ETF 근사)과 전략 묶음. 폰 브라우저에 저장되고 알림은 가지 않는다.
 - **알림(ntfy)**: `coin/config.json`에서 바꾼다. `alert_presets`×`alert_coins`의 매수·매도, `alert_ut4h` 코인의 UT Bot 4시간봉 전환, 온체인 국면 변화. 지난 상태는 배포된 `coin.json`에 남겨 같은 신호를 두 번 보내지 않는다.
-- **UT Bot 설정**: `coin/config.json`의 `utbot.key`·`utbot.atr`를 트레이딩뷰 설정과 맞춘다.
+- **UT Bot 설정**: `coin/config.json`의 `utbot`(일봉)·`utbot4h`(4시간봉) key·atr를 트레이딩뷰 설정과 맞춘다. 4시간봉은 트레이딩뷰와 같은 Key 5·ATR 20 (Key 1·ATR 10은 2018년부터 신호가 너무 잦아 손실). 일봉은 Key 1·ATR 10 유지 — 5·20으로 바꾸면 365일선 아래+MVRV 바닥권 조합 전략에서 매수가 0번이 됨.
 - 로컬 실행: `NTFY_DRY=1 node coin/build.mjs` (Node 18 이상) → `docs/coinhist.json`, `docs/coin.json`
