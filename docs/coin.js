@@ -105,13 +105,13 @@ function regimeCard(L){
 function mvrvChart(){
   var a=X.oc.mvrv.btc,n=X.n,from=Math.max(0,n-CE.REGIME_W),v=[];for(var i=from;i<n;i++)v.push(a[i]);
   var s=v.filter(CE.isn).slice().sort(function(x,y){return x-y});if(s.length<30)return el("div");
-  var q=function(f){return s[Math.floor(f*(s.length-1))]},lo=q(.2),hi=q(.8);
+  var q=function(f){return s[Math.floor(f*(s.length-1))]},lo=q(.2),hi=q(.8),lo1=q(.1),hi1=q(.9);
   var w=600,h=90,mn=s[0],mx=s[s.length-1],rg=mx-mn||1,y=function(x){return (h-4-(x-mn)/rg*(h-8)).toFixed(1)};
   var ns="http://www.w3.org/2000/svg",svg=document.createElementNS(ns,"svg");svg.setAttribute("viewBox","0 0 "+w+" "+h);svg.setAttribute("preserveAspectRatio","none");svg.setAttribute("class","spark");
-  [[lo,"#3ecf8e"],[hi,"#ff5d5d"]].forEach(function(z){var ln=document.createElementNS(ns,"line");ln.setAttribute("x1",0);ln.setAttribute("x2",w);ln.setAttribute("y1",y(z[0]));ln.setAttribute("y2",y(z[0]));ln.setAttribute("stroke",z[1]);ln.setAttribute("stroke-dasharray","4 4");ln.setAttribute("vector-effect","non-scaling-stroke");svg.appendChild(ln)});
+  [[lo,"#3ecf8e","4 4"],[hi,"#ff5d5d","4 4"],[lo1,"#3ecf8e",""],[hi1,"#ff5d5d",""]].forEach(function(z){var ln=document.createElementNS(ns,"line");ln.setAttribute("x1",0);ln.setAttribute("x2",w);ln.setAttribute("y1",y(z[0]));ln.setAttribute("y2",y(z[0]));ln.setAttribute("stroke",z[1]);if(z[2])ln.setAttribute("stroke-dasharray",z[2]);else ln.setAttribute("stroke-opacity",".7");ln.setAttribute("vector-effect","non-scaling-stroke");svg.appendChild(ln)});
   var pts=[];v.forEach(function(x,k){if(CE.isn(x))pts.push((k/(v.length-1)*w).toFixed(1)+","+y(x))});
   var pl=document.createElementNS(ns,"polyline");pl.setAttribute("points",pts.join(" "));pl.setAttribute("fill","none");pl.setAttribute("stroke","#f4c04e");pl.setAttribute("stroke-width","2");pl.setAttribute("vector-effect","non-scaling-stroke");svg.appendChild(pl);
-  var wr=el("div");wr.style.marginTop="8px";wr.appendChild(svg);wr.appendChild(el("div","small","BTC MVRV 최근 4년 · 초록 점선 하위 20%("+lo.toFixed(2)+") · 빨강 점선 상위 20%("+hi.toFixed(2)+")"));return wr;
+  var wr=el("div");wr.style.marginTop="8px";wr.appendChild(svg);wr.appendChild(el("div","small","BTC MVRV 최근 4년 · 초록 실선 하위 10%("+lo1.toFixed(2)+") · 점선 하위 20%("+lo.toFixed(2)+") · 빨강 점선 상위 20%("+hi.toFixed(2)+") · 실선 상위 10%("+hi1.toFixed(2)+")"));return wr;
 }
 function coinTable(L){
   sec(L,"코인 현황");
