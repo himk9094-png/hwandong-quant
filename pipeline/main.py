@@ -16,7 +16,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from . import config, dart, factors, krx, naver, ntfy, prices, signals, telegram, tracker
+from . import config, dart, factors, holdsync, krx, naver, ntfy, prices, signals, telegram, tracker
 
 # (필드, 배율, 소수자리)  배율: 원→억은 1e-8, 비율→%는 100
 FIELDS = [
@@ -55,7 +55,7 @@ def build_payload(df, panel, meta, perf, recent):
     rows = [list(t) for t in zip(*[data[c] for c in cols])]
 
     d = df.set_index("code")
-    spark_codes = set(d.index[d["amf"].notna() | d["asm"].notna()]) | set(d.index[d["nsig"] >= 1])
+    spark_codes = set(d.index[d["amf"].notna() | d["asm"].notna()]) | set(d.index[d["nsig"] >= 1]) | set(d.index[d["hold"] == 1])
     for col in ("lm", "lc", "lf", "sz"):
         spark_codes |= set(d.index[d[col] <= 30])
     for col, asc in (("total", False), ("mf", True), ("v", False), ("q", False), ("m", False), ("surge", False)):
@@ -213,6 +213,7 @@ def main(argv=None) -> int:
         "approx_ttm": int(df["fin"].fillna("").str.endswith("*").sum()),
         "warnings": warnings, "strats": tracker.STRATS, "horizons": list(tracker.HORIZONS),
         "aplan": cfg["aplan"], "universe": cfg["universe"], "source": source, "fin_source": " · ".join(f"{k} {v}종목" for k, v in fin_src.items()) or "DART",
+        "hold_topic": holdsync.topic(cfg),   # 앱 '보유' 탭이 종목코드 목록을 보내는 ntfy 주제 (구독 불필요)
     }
     payload = build_payload(df, panel, meta, perf, recent)
     out = Path(a.out) / "data"

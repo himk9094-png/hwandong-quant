@@ -85,6 +85,16 @@ svg.pfchart{width:100%;height:200px;display:block;margin-top:6px}
 .addpf{width:100%;margin-top:8px;padding:10px;border-radius:10px;border:1px solid var(--acc);background:none;color:var(--acc);font-weight:700;font-size:14px}
 .good{color:var(--good)}
 .chip.good{background:#173a2c;color:var(--good)}.chip.up{background:#4a1f24;color:#ff8a8a}
+.hcard .sub,.hcard .mets,.hsum .mets{margin-left:0}
+.hsum .big{font-size:26px;font-weight:800;font-variant-numeric:tabular-nums;margin:2px 0 4px}
+.hpl{font-size:15px;font-weight:700;font-variant-numeric:tabular-nums;margin-bottom:8px}
+.hed{border-bottom:1px solid var(--line);padding:10px 0}
+.hed .row1{align-items:center}
+.hed .small{margin-right:4px}
+.hin{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px}
+.hin label{display:flex;flex-direction:column;gap:3px}
+.hline{font-size:13px;margin:2px 0 8px;font-variant-numeric:tabular-nums;line-height:1.7}
+.hline .chip{margin:0 6px 0 0}
 </style>
 </head>
 <body>
@@ -106,7 +116,7 @@ svg.pfchart{width:100%;height:200px;display:block;margin-top:6px}
 <script>
 (function(){
 "use strict";
-var D=null,R=[],BY={},tab=location.hash==="#coin"?"coin":"total",shown=50,query="",sigOnly=false;
+var D=null,R=[],BY={},tab=({"#coin":"coin","#hold":"hold"})[location.hash]||"total",shown=50,query="",sigOnly=false;
 var $=function(s){return document.querySelector(s)};
 function el(t,c,x){var e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e}
 function nz(v){return v!==null&&v!==undefined}
@@ -125,6 +135,7 @@ function sortBy(f,asc){return function(a,b){var x=a[f],y=b[f];if(!nz(x))return 1
 
 var TABS=[
  {k:"total",l:"종합",d:"<b>밸류·퀄리티·모멘텀</b> 백분위 점수의 평균(0~100). 세 가지 모두 계산되는 종목만.",f:function(r){return nz(r.total)},s:sortBy("total"),c:[["종합","total","s"],["밸류","v","s"],["퀄리티","q","s"],["모멘텀","m","s"]]},
+ {k:"hold",l:"보유",custom:"hold"},
  {k:"lmom",l:"대형 모멘텀",d:"코스피 <b>시총 상위 100</b> 중 12-1개월 수익률 순. 상위 10이 편입 대상. 백테스트: 11~4월 보유 시 20~23년 +10%/년, 23~26년 +37%/년.",f:function(r){return nz(r.lm)},s:sortBy("lm",true),rk:"lm",topN:10,c:[["12-1M","mom12","sp"],["6M","mom6","sp"],["52주고점","hi52","sp"],["시총","mcap","eok"]],season:true},
  {k:"lcombo",l:"대형 종합",d:"코스피 시총 상위 100 중 가치(PER·이익수익률)+질(ROA·ROE)+모멘텀(12-1·6-1개월) 평균 순. 상위 10 편입. 백테스트: 11~4월 보유 시 +9%/년, +36%/년.",f:function(r){return nz(r.lc)},s:sortBy("lc",true),rk:"lc",topN:10,c:[["PER","per","x"],["ROE","roe","p"],["12-1M","mom12","sp"],["시총","mcap","eok"]],season:true},
  {k:"lmf",l:"대형 마법공식",d:"코스피 시총 상위 100 중 이익수익률+ROA 순(흑자만). 상위 10 편입. 백테스트: 11~4월 보유 시 +5%/년, +25%/년 — 대형주에선 모멘텀보다 약함.",f:function(r){return nz(r.lf)},s:sortBy("lf",true),rk:"lf",topN:10,c:[["이익수익률","ey","p"],["ROA","roa","p"],["PER","per","x"],["시총","mcap","eok"]],season:true},
@@ -142,10 +153,11 @@ var TABS=[
  {k:"search",l:"검색",custom:"search"}
 ];
 
+function held(r){return window.HD?window.HD.has(r.code):!!r.hold}
 function rowCard(r,rank,t){
   var b=el("button","card");b.type="button";
   var a=el("div","row1");a.appendChild(el("span","rk",t.rk?r[t.rk]:rank));a.appendChild(el("span","nm",r.name));
-  if(r.hold){a.appendChild(el("span","chip st","보유"))}
+  if(held(r)){a.appendChild(el("span","chip st","보유"))}
   if(t.topN){a.appendChild(el("span","chip "+(r[t.rk]<=t.topN?"":"st"),r[t.rk]<=t.topN?"편입":"후보"))}
   a.appendChild(el("span","px",num(r.close)));var c=el("span","chg "+cls(r.chg),nz(r.chg)?(r.chg>0?"+":"")+r.chg.toFixed(2)+"%":"–");a.appendChild(c);b.appendChild(a);
   b.appendChild(el("div","sub",r.code+" · "+(r.mkt==="KOSPI"?"코스피":"코스닥")+" · 시총 "+F.eok(r.mcap)+(r.fin?" · 재무 "+r.fin:"")));
@@ -163,11 +175,12 @@ function filt(r){
 }
 function render(){
   var L=$("#list");L.innerHTML="";var t=TABS.find(function(x){return x.k===tab});
-  $("#filters").style.display=(t.custom==="perf"||t.custom==="bt"||t.custom==="pf"||t.custom==="coin")?"none":"flex";
+  $("#filters").style.display=(t.custom==="perf"||t.custom==="bt"||t.custom==="pf"||t.custom==="coin"||t.custom==="hold")?"none":"flex";
   ["#fMkt","#fCap","#fTv"].forEach(function(s){$(s).style.display=t.custom==="aplan"?"none":""});
   var d=el("p","desc");d.innerHTML=t.d||"";if(t.d)L.appendChild(d);
   if(t.season&&D){var mo=+D.meta.asof.slice(5,7),on=(mo>=11||mo<=4);var bn=el("div","banner",on?"지금은 보유 구간(11~4월)입니다. 백테스트 기준: 11월 초 매수 → 2월 초 교체 → 5월 초 매도.":"지금은 쉬는 구간(5~10월)입니다. 백테스트 기준 11월 초에 매수합니다.");bn.style.margin="0 0 10px";L.appendChild(bn)}
   if(t.custom==="aplan")return renderA(L,t);
+  if(t.custom==="hold")return window.HD?window.HD.render(L):L.appendChild(el("div","empty","불러오는 중…"));
   if(t.custom==="pf")return window.PF?window.PF.render(L):L.appendChild(el("div","empty","불러오는 중…"));
   if(t.custom==="coin")return window.CO?window.CO.render(L):L.appendChild(el("div","empty","불러오는 중…"));
   if(t.custom==="perf")return renderPerf(L);
@@ -239,6 +252,7 @@ function openSheet(r){
   var B=$("#sheetBody");B.innerHTML="";
   var h=el("div","row1");h.style.paddingRight="40px";h.appendChild(el("span","nm",r.name));h.appendChild(el("span","px",num(r.close)+"원"));h.appendChild(el("span","chg "+cls(r.chg),nz(r.chg)?(r.chg>0?"+":"")+r.chg.toFixed(2)+"%":"–"));B.appendChild(h);
   var sub=el("div","sub",r.code+" · "+(r.mkt==="KOSPI"?"코스피":"코스닥")+" · 시총 "+F.eok(r.mcap)+" · 20일 평균 거래대금 "+F.eok(r.tv20));sub.style.marginLeft="0";B.appendChild(sub);
+  var hi=window.HD&&window.HD.info(r);if(hi)B.appendChild(hi);
   B.appendChild(spark(r.code));
   [["종합","total"],["밸류","v"],["퀄리티","q"],["모멘텀","m"]].forEach(function(x){var br=el("div","brow");br.appendChild(el("span",null,x[0]));var bar=el("div","bar"),i=el("i");i.style.width=(r[x[1]]||0)+"%";bar.appendChild(i);br.appendChild(bar);br.appendChild(el("span",null,F.s(r[x[1]])));B.appendChild(br)});
   if(r.sig||r.st){var cw=el("div");cw.style.margin="8px 0";(r.sig||"").split("|").filter(Boolean).forEach(function(s){cw.appendChild(el("span","chip",s))});(r.st||"").split("|").filter(Boolean).forEach(function(s){cw.appendChild(el("span","chip st",s))});B.appendChild(cw)}
@@ -247,6 +261,7 @@ function openSheet(r){
   B.appendChild(g);
   B.appendChild(el("div","small","재무 기준: "+(r.fin||"없음")+(r.fin&&r.fin.slice(-1)==="*"?" (*연환산 근사)":"")+" · 손익은 최근 4분기 합(TTM)"));
   var lk=el("div","links");[["네이버증권","https://m.stock.naver.com/domestic/stock/"+r.code+"/total"],["토스증권","https://tossinvest.com/stocks/A"+r.code]].forEach(function(x){var a=el("a",null,x[0]);a.href=x[1];a.target="_blank";a.rel="noopener";lk.appendChild(a)});B.appendChild(lk);
+  if(window.HD)B.appendChild(window.HD.btn(r));
   var ap=el("button","addpf","+ 포트폴리오에 담기");ap.onclick=function(){window.PF&&window.PF.add(r)};B.appendChild(ap);
   show();$("#sheet").scrollTop=0;
 }
@@ -262,8 +277,9 @@ function showInfo(){
   B.appendChild(el("p","desc","모든 점수는 과거 데이터로 계산한 참고 지표이며 매수·매도 권유가 아닙니다. 전략 효과는 '성과' 탭에서 확인하세요."));
   show();
 }
-function goPf(){tab="pf";Array.prototype.forEach.call($("#tabs").children,function(x){x.classList.toggle("on",x.textContent==="내 포트폴리오");if(x.textContent==="내 포트폴리오")x.scrollIntoView({inline:"center",block:"nearest"})});render();window.scrollTo(0,0)}
-window.HQ={el:el,num:num,cls:cls,$:$,F:F,BY:function(){return BY},show:show,closeSheet:closeSheet,openSheet:openSheet,render:render,goPf:goPf};
+function goTab(k){var t=TABS.find(function(x){return x.k===k});if(!t)return;tab=k;shown=50;Array.prototype.forEach.call($("#tabs").children,function(x){var on=x.textContent===t.l;x.classList.toggle("on",on);if(on)x.scrollIntoView({inline:"center",block:"nearest"})});render();window.scrollTo(0,0)}
+function goPf(){goTab("pf")}
+window.HQ={el:el,num:num,cls:cls,$:$,F:F,BY:function(){return BY},meta:function(){return D&&D.meta},show:show,closeSheet:closeSheet,openSheet:openSheet,render:render,goPf:goPf,goTab:goTab};
 function init(data){
   D=data;R=data.rows.map(function(a){var o={};data.cols.forEach(function(c,i){o[c]=a[i]});return o});
   R.forEach(function(r){BY[r.code]=r});
@@ -282,6 +298,7 @@ else fetch("data/latest.json?t="+Date.now()).then(function(r){if(!r.ok)throw new
 })();
 </script>
 <script src="pf.js"></script>
+<script src="hold.js"></script>
 <script src="coin-engine.js"></script>
 <script src="coin.js"></script>
 </body>

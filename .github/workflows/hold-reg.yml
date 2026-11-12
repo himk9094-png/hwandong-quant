@@ -1,0 +1,36 @@
+name: hold-reg
+
+# 앱 '보유' 탭에서 바꾼 종목 목록(ntfy 등록 주제)을 config.json holdings에 반영
+# → 주간 공시·뉴스 점검(news)과 다음 평일 계산의 '보유' 표시·차트에 쓰임. 수량·평단은 폰에만 있고 여기로 오지 않음.
+# ntfy.sh는 메시지를 12시간만 보관하므로 1시간마다 확인.
+on:
+  schedule:
+    - cron: "23 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: hold-reg
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install -q requests
+      - name: 확인·반영
+        run: python -u -m pipeline.holdsync
+      - name: 커밋
+        run: |
+          if git diff --quiet config.json; then echo "변경 없음"; exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "보유 종목 동기화"
+          for i in 1 2 3; do git pull --rebase origin main && git push && break; sleep 5; done
