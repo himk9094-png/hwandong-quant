@@ -143,8 +143,13 @@ def main(argv=None) -> int:
             nd = [x for x in nv["date"].astype(str) if not (x == krx.ymd(now.date()) and now.time() < dt.time(15, 40))]
             store.get(asof, "KOSDAQ")    # 코스닥 API 승인 여부도 먼저 확인
             if nd and max(nd) > asof:
-                stale = True
-                raise krx.KrxError(f"KRX 데이터가 아직 {asof_d}까지만 있음(최신 거래일 {max(nd)})")
+                # 네이버 일봉은 넥스트레이드 시간외(~20:00)까지 섞인 가격이라 KRX 종가·전일 대비와 다르다.
+                # 정기 실행(아침)만 신선도를 위해 네이버로 대체하고, 코드 변경·수동 실행은 KRX 마지막 거래일로 계산.
+                if a.no_telegram:
+                    print(f"  KRX는 {asof_d}까지 — 수동·코드 변경 실행이라 네이버(시간외 포함) 대신 KRX 마지막 거래일로 계산")
+                else:
+                    stale = True
+                    raise krx.KrxError(f"KRX 데이터가 아직 {asof_d}까지만 있음(최신 거래일 {max(nd)})")
             print(f"기준일 {asof_d} — 주가 이력 수집 중…")
             long = store.history(asof_d, cfg["history_calendar_days"], cfg["universe"]["markets"])
             print(f"  KRX 신규 요청 {store.fetched}건 ({time.time() - t_krx:.0f}초)")
