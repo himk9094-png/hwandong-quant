@@ -1,0 +1,18 @@
+name: probe
+on: workflow_dispatch
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install requests
+      - env:
+          KRX_API_KEY: ${{ secrets.KRX_API_KEY }}
+          DART_API_KEY: ${{ secrets.DART_API_KEY }}
+        run: python -u tools/probe_data.py
