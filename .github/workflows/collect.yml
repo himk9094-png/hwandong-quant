@@ -8,8 +8,8 @@ on:
   workflow_dispatch:
     inputs:
       steps:
-        description: "실행할 단계 (krx disc fin)"
-        default: "krx disc fin"
+        description: "실행할 단계 (krx disc multi fin)"
+        default: "krx multi disc fin"
 
 permissions:
   contents: write
@@ -37,9 +37,10 @@ jobs:
         env:
           KRX_API_KEY: ${{ secrets.KRX_API_KEY }}
           DART_API_KEY: ${{ secrets.DART_API_KEY }}
-          STEPS: ${{ github.event.inputs.steps || 'krx disc fin' }}
+          STEPS: ${{ github.event.inputs.steps || 'krx multi disc fin' }}
         run: |
-          for s in $STEPS; do python -u -m backtest.collect $s || echo "::warning::$s 단계 실패"; done
+          save() { (cd store && git config user.name "github-actions[bot]" && git config user.email "41898282+github-actions[bot]@users.noreply.github.com" && git add -A && { git diff --cached --quiet || { git commit -qm "data $1 $(date -u +%F)" && git push -q origin HEAD:data; }; }); }
+          for s in $STEPS; do python -u -m backtest.collect $s || echo "::warning::$s 단계 실패"; save $s; done
           python -m backtest.collect status
       - name: 저장 (data 브랜치)
         if: always()

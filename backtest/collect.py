@@ -5,7 +5,8 @@ DART는 하루 호출 한도(2만 건)가 있어 여러 날에 걸쳐 이어받�
 
   python -m backtest.collect krx        # 1) KRX 전 종목 일별 (2015-01~)
   python -m backtest.collect disc       # 2) DART 위험 공시 목록 (주요사항보고서·거래소공시)
-  python -m backtest.collect fin        # 3) DART 분기 재무 (소형주 후보만, 한도 안에서)
+  python -m backtest.collect multi      # 3) DART 요약 재무 (100개 회사씩 → 매출·이익·자본, 연결/별도 여부)
+  python -m backtest.collect fin        # 4) DART 전체 재무 (매출총이익·영업현금흐름, 한 회사씩 · 한도 안에서)
   python -m backtest.collect status     # 진행 상황
 """
 from __future__ import annotations
@@ -291,9 +292,8 @@ def fin_tasks(px: pd.DataFrame, cc: dict) -> list[tuple]:
     return sorted(set(need), key=lambda t: (t[1], t[2], t[0]))
 
 
-def fin():
+def _cands(d):
     FIN_DIR.mkdir(parents=True, exist_ok=True)
-    d = Dart()
     cc_p = STORE / "corp_codes.parquet"
     if not cc_p.exists() or time.time() - cc_p.stat().st_mtime > 20 * 86400:
         d.corp_codes().to_parquet(cc_p, index=False)
@@ -306,16 +306,89 @@ def fin():
         if code not in cc and name in by_name.index and len(by_name[name]) == 1:
             cc[code] = by_name[name][0]
     tasks = fin_tasks(px, cc)
+    log(f"후보 (회사·보고서) {len(tasks)}건 · 종목코드↔DART 연결 {sum(1 for c in px.code.unique() if c in cc)}/{px.code.nunique()}")
+    return tasks
+
+
+MACCT = {"매출액": "rev", "영업수익": "rev", "수익(매출액)": "rev", "매출": "rev", "영업이익": "op",
+         "당기순이익": "ni", "분기순이익": "ni", "반기순이익": "ni", "자산총계": "assets", "자본총계": "equity"}
+
+
+def multi():
+    """요약 재무(fnlttMultiAcnt, 100개 회사씩): 매출·영업이익·순이익(올해·작년 같은 기간 누적), 자산·자본, 연결/별도 여부."""
+    d = Dart()
+    tasks = _cands(d)
+    out_p = FIN_DIR / "multi.parquet"
+    old = pd.read_parquet(out_p) if out_p.exists() else None
+    done_p = FIN_DIR / "multi_done.json"
+    done = set(json.loads(done_p.read_text())) if done_p.exists() else set()
+    per = {}
+    for corp, y, rp in tasks:
+        if f"{corp}_{y}_{rp}" not in done:
+            per.setdefault((y, rp), []).append(corp)
+    log(f"요약 재무: {len(per)}개 기간, {sum(len(v) for v in per.values())}개 회사·기간 남음")
+    rows = []
+    for (y, rp), corps in sorted(per.items()):
+        cum = rp in ("11012", "11014")
+        for i in range(0, len(corps), 100):
+            b = corps[i:i + 100]
+            j = d.get("fnlttMultiAcnt.json", corp_code=",".join(b), bsns_year=y, reprt_code=rp)
+            if j is None:
+                break
+            if j.get("status") not in ("000", "013"):
+                log("요약 재무 오류", y, rp, j.get("status"), j.get("message"))
+                continue
+            rec = {}
+            for r in j.get("list") or []:
+                k = MACCT.get(re.sub(r"\s+", "", str(r.get("account_nm") or "")).replace("(손실)", ""))
+                if not k:
+                    continue
+                fs = r.get("fs_div") or "OFS"
+                c = rec.setdefault((r["corp_code"], fs), {"rcept_no": r.get("rcept_no")})
+                if k in ("rev", "op", "ni"):
+                    cur = _num(r.get("thstrm_add_amount")) if cum else None
+                    cur = cur if cur is not None else _num(r.get("thstrm_amount"))
+                    prev = _num(r.get("frmtrm_add_amount")) if cum else None
+                    prev = prev if prev is not None else _num(r.get("frmtrm_amount"))
+                    c.setdefault(k, cur); c.setdefault(k + "_p", prev)
+                else:
+                    c.setdefault(k, _num(r.get("thstrm_amount")))
+            for (corp, fs), v in rec.items():
+                rows.append({"corp": corp, "year": y, "rpt": rp, "fs": fs, **v})
+            done.update(f"{c}_{y}_{rp}" for c in b)
+        if d.stop:
+            break
+    if rows:
+        new = pd.DataFrame(rows)
+        allf = pd.concat([old, new], ignore_index=True) if old is not None else new
+        allf.drop_duplicates(["corp", "year", "rpt", "fs"], keep="last").to_parquet(out_p, index=False)
+    done_p.write_text(json.dumps(sorted(done)))
+    log(f"요약 재무 저장: +{len(rows)}행 · 호출 {d.used}")
+
+
+def fin():
+    d = Dart()
+    tasks = _cands(d)
+    mp = FIN_DIR / "multi.parquet"
+    fsmap = {}
+    if mp.exists():
+        m = pd.read_parquet(mp, columns=["corp", "year", "rpt", "fs"])
+        for (corp, y, rp), g in m.groupby(["corp", "year", "rpt"]).fs:
+            fsmap[(corp, int(y), rp)] = "CFS" if "CFS" in set(g) else "OFS"
+    # 연간 보고서 먼저(모든 해) → 그다음 분기 보고서: 하루치만 모여도 연 1회 리밸런싱 시험이 가능하게
+    tasks = sorted(tasks, key=lambda t: (t[2] != "11011", t[1], t[2], t[0]))
     done_p = FIN_DIR / "done.json"
     done = set(json.loads(done_p.read_text())) if done_p.exists() else set()
     todo = [t for t in tasks if f"{t[0]}_{t[1]}_{t[2]}" not in done]
-    log(f"재무: 전체 {len(tasks)}건, 남은 {len(todo)}건 (종목코드↔DART 연결 {sum(1 for c in px.code.unique() if c in cc)}/{px.code.nunique()})")
+    if fsmap:      # 요약 재무에 아예 없는 회사·기간은 건너뜀(제출 안 함)
+        todo = [t for t in todo if (t[0], t[1], t[2]) in fsmap]
+    log(f"전체 재무: 남은 {len(todo)}건")
     rows, lock = [], threading.Lock()
 
     def one(t):
         corp, y, rp = t
         rec = None
-        for fs in ("CFS", "OFS"):
+        for fs in ((fsmap[(corp, y, rp)],) if (corp, y, rp) in fsmap else ("CFS", "OFS")):
             j = d.get("fnlttSinglAcntAll.json", corp_code=corp, bsns_year=y, reprt_code=rp, fs_div=fs)
             if j is None:
                 return
@@ -364,4 +437,4 @@ def status():
 
 
 if __name__ == "__main__":
-    {"krx": krx, "disc": disc, "fin": fin, "status": status}[sys.argv[1] if len(sys.argv) > 1 else "status"]()
+    {"krx": krx, "disc": disc, "multi": multi, "fin": fin, "status": status}[sys.argv[1] if len(sys.argv) > 1 else "status"]()
