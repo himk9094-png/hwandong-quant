@@ -4,12 +4,15 @@ name: collect
 # DART 하루 한도 때문에 매일 이어받는다. 다 모이면 이 예약은 할 일이 없어 1~2분 만에 끝난다.
 on:
   schedule:
-    - cron: "23 1 * * *"     # 한국시간 10:23
+    - cron: "7 15 * * *"     # 한국시간 00:07 — DART는 한국 낮엔 느리고 밤엔 빠름, 하루 한도도 자정에 초기화
   workflow_dispatch:
     inputs:
       steps:
         description: "실행할 단계 (krx disc multi fin)"
-        default: "krx multi disc fin"
+        default: "krx multi fin disc"
+      threads:
+        description: "DART 동시 요청 수 (낮엔 1, 밤엔 2)"
+        default: "2"
 
 permissions:
   contents: write
@@ -38,12 +41,12 @@ jobs:
           KRX_API_KEY: ${{ secrets.KRX_API_KEY }}
           DART_API_KEY: ${{ secrets.DART_API_KEY }}
           STEPS: ${{ github.event.inputs.steps || 'krx multi fin disc' }}
-          DART_THREADS: "6"
-          DART_GAP: "0.05"
+          DART_THREADS: ${{ github.event.inputs.threads || '2' }}
+          DART_GAP: "0.1"
         run: |
           save() { (flock 9; cd store && git config user.name "github-actions[bot]" && git config user.email "41898282+github-actions[bot]@users.noreply.github.com" && git add -A && { git diff --cached --quiet || { git commit -qm "data $1 $(date -u +%F)" && git push -q origin HEAD:data; }; }) 9>/tmp/git.lock; }
           ( while sleep 900; do save "progress $(date -u +%H:%M)"; done ) & BG=$!
-          lim() { case $1 in multi) echo 2400;; krx|disc) echo 3600;; fin) echo 12600;; *) echo 600;; esac; }
+          lim() { case $1 in multi) echo 2400;; krx) echo 3600;; disc) echo 5400;; fin) echo 18000;; *) echo 600;; esac; }
           for s in $STEPS; do n=${s%%:*}; a=""; [ "$n" != "$s" ] && a=${s#*:}; timeout --signal=INT $(lim $n) python -u -X faulthandler -m backtest.collect $n $a || echo "::warning::$s 단계 실패/시간초과"; save $n; done
           kill $BG 2>/dev/null || true
           python -m backtest.collect status
