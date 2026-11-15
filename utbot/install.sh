@@ -53,6 +53,7 @@ import hmac
 import json
 import math
 import os
+import socket
 import sys
 import time
 import traceback
@@ -60,6 +61,18 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from decimal import ROUND_DOWN, Decimal
+
+# 서버에 IPv6가 있어도 항상 IPv4로 접속: 바이낸스 키의 IP 제한(고정 IPv4)과 맞추기 위해
+_getaddrinfo = socket.getaddrinfo
+
+
+def _v4_first(host, *a, **k):
+    res = _getaddrinfo(host, *a, **k)
+    v4 = [r for r in res if r[0] == socket.AF_INET]
+    return v4 or res
+
+
+socket.getaddrinfo = _v4_first
 
 HOME = os.environ.get("UTBOT_HOME", os.path.dirname(os.path.abspath(__file__)))
 CFG_PATH = os.path.join(HOME, "config.json")
