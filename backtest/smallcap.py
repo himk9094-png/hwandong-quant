@@ -182,6 +182,9 @@ def picks(m, F, i: int, strat: int, n: int):
     g = lambda k: F[k].iloc[j].reindex(small)
     cap = mc.reindex(small)
     eq, ni, rev, cfo, gp, assets = g("equity"), g("ni"), g("rev"), g("cfo"), g("gp"), g("assets")
+    # 재무 단위 오류 방지: 자본·자산이 시총의 50배를 넘거나 자본 > 자산이면 버림
+    bad = (eq > cap * 50) | (assets > cap * 200) | (eq > assets * 1.01)
+    eq, ni, rev, cfo, gp, assets = (x.where(~bad) for x in (eq, ni, rev, cfo, gp, assets))
     pbr = (cap / eq).where(eq > 0)
     per = (cap / ni).where(ni > 0)
     psr = (cap / rev).where(rev > 0)
@@ -189,7 +192,11 @@ def picks(m, F, i: int, strat: int, n: int):
     gpa = (gp / assets).where(assets > 0)
     sh, sh1 = m["shares"].iloc[j].reindex(small), m["shares"].iloc[max(0, j - 250)].reindex(small)
     fscore = (ni > 0).astype(int) + (cfo > 0).astype(int) + (sh <= sh1 * 1.001).astype(int)
-    if strat == 0:
+    if strat == 12:                                          # 초소형주 + 흑자 + 자본잠식 아님
+        score = rank(cap).where((ni > 0) & (eq > 0))
+    elif strat == 11:                                          # 저PBR + 흑자(최근 4분기 순이익 > 0)
+        score = rank(pbr).where(ni > 0)
+    elif strat == 0:
         score = rank(cap)                                     # 시가총액 가장 작은 순
     elif strat == 1:
         score = rank(pbr)
@@ -219,7 +226,7 @@ def picks(m, F, i: int, strat: int, n: int):
     return list(score.index[:n])
 
 
-NAMES = {0: "초소형주(시총 하위)", 1: "소형주 저PBR", 2: "파마+LSV 콤보", 3: "슈퍼가치", 4: "신마법공식 2.0", 5: "F-스코어", 6: "슈퍼퀄리티", 7: "짬뽕"}
+NAMES = {0: "초소형주(시총 하위)", 12: "초소형주+흑자", 11: "저PBR+흑자", 1: "소형주 저PBR", 2: "파마+LSV 콤보", 3: "슈퍼가치", 4: "신마법공식 2.0", 5: "F-스코어", 6: "슈퍼퀄리티", 7: "짬뽕"}
 NEEDS_FULL = {2, 3, 5, 6, 7}           # 영업현금흐름 필요
 NEEDS_GP = {4, 6, 7}
 
