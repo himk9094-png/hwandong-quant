@@ -134,26 +134,37 @@ class Dart:
         self.used = 0
         self.lock = threading.Lock()
         self.stop = False
+        self.next_t = 0.0                      # 요청 간격 제한 (분당 약 600건)
+        self.gap = float(os.environ.get("DART_GAP", "0.1"))
+        self.codes = {}
 
     def get(self, path, **p):
         with self.lock:
             if self.used >= DART_BUDGET or self.stop:
                 return None
             self.used += 1
+            wait = self.next_t - time.time()
+            self.next_t = max(time.time(), self.next_t) + self.gap
+        if wait > 0:
+            time.sleep(wait)
         p["crtfc_key"] = self.key
         for i in range(4):
             try:
                 r = self.s.get(DART + path, params=p, timeout=25)
+                if r.status_code != 200:
+                    raise ValueError(f"HTTP {r.status_code}")
                 j = r.json()
                 st = j.get("status")
+                with self.lock:
+                    self.codes[st] = self.codes.get(st, 0) + 1
                 if st == "020":                      # 하루 한도 초과
                     self.stop = True
                     log("DART 하루 한도 도달 — 내일 이어받음")
                     return None
                 return j
             except (requests.RequestException, ValueError) as e:
-                log(f"  DART 재시도 {i + 1}: {path} {type(e).__name__}")
-                time.sleep(2 * (i + 1))
+                log(f"  DART 재시도 {i + 1}: {path} {type(e).__name__} {str(e)[:60]}")
+                time.sleep(5 * (i + 1))
         return {"status": "ERR"}
 
     def corp_codes(self) -> pd.DataFrame:
@@ -422,11 +433,11 @@ def fin():
 
     t0 = time.time()
     for i in range(0, len(todo), 2000):
-        with ThreadPoolExecutor(4) as ex:
+        with ThreadPoolExecutor(2) as ex:
             list(ex.map(one, todo[i:i + 2000]))
         _save_fin(rows, done, done_p)
         rows.clear()
-        log(f"재무 {min(i + 2000, len(todo))}/{len(todo)} · 호출 {d.used} · {time.time() - t0:.0f}초")
+        log(f"재무 {min(i + 2000, len(todo))}/{len(todo)} · 호출 {d.used} · {time.time() - t0:.0f}초 · 응답 {d.codes}")
         if d.stop or d.used >= DART_BUDGET:
             break
 
