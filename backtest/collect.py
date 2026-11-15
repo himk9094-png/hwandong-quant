@@ -469,10 +469,17 @@ def probe():
                 log(f"요약 {y} {rp} {n}개: {time.time() - t:.1f}초 status {j.get('status')} 행 {len(j.get('list') or [])}")
             except Exception as e:
                 log(f"요약 {y} {rp} {n}개: 실패 {type(e).__name__} {time.time() - t:.1f}초")
-    for c in corps[:5]:
-        t = time.time()
-        j = d.get("fnlttSinglAcntAll.json", corp_code=c, bsns_year=2023, reprt_code="11011", fs_div="CFS")
-        log(f"전체 {c}: {time.time() - t:.1f}초 status {j.get('status') if j else None}")
+    for y, rp in ((2016, "11011"), (2018, "11013"), (2021, "11012"), (2024, "11011")):
+        ts = []
+        for c in corps[:8]:
+            t = time.time()
+            try:
+                r = d.s.get(DART + "fnlttSinglAcntAll.json", params={"crtfc_key": d.key, "corp_code": c, "bsns_year": y, "reprt_code": rp, "fs_div": "OFS"}, timeout=60)
+                st = r.json().get("status")
+            except Exception as e:
+                st = type(e).__name__
+            ts.append((round(time.time() - t, 1), st))
+        log(f"전체 {y} {rp}: {ts}")
 
 
 def status():
