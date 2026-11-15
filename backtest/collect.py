@@ -394,7 +394,7 @@ def multi():
     log(f"요약 재무 끝 · 호출 {d.used}")
 
 
-def fin():
+def fin(limit: int | None = None):
     d = Dart()
     tasks = _cands(d)
     mp = FIN_DIR / "multi.parquet"
@@ -410,6 +410,8 @@ def fin():
     todo = [t for t in tasks if f"{t[0]}_{t[1]}_{t[2]}" not in done]
     if fsmap:      # 요약 재무에 아예 없는 회사·기간은 건너뜀(제출 안 함)
         todo = [t for t in todo if (t[0], t[1], t[2]) in fsmap]
+    if limit:
+        todo = todo[:limit]
     log(f"전체 재무: 남은 {len(todo)}건")
     rows, lock = [], threading.Lock()
 
@@ -433,8 +435,18 @@ def fin():
 
     t0 = time.time()
     for i in range(0, len(todo), 2000):
-        with ThreadPoolExecutor(2) as ex:
-            list(ex.map(one, todo[i:i + 2000]))
+        nth = int(os.environ.get("DART_THREADS", "1"))
+        tc = time.time()
+        if nth == 1:
+            for k, t in enumerate(todo[i:i + 2000]):
+                one(t)
+                if k % 200 == 199:
+                    log(f"  {i + k + 1}건 · {(k + 1) / (time.time() - tc):.1f}건/초 · 응답 {d.codes}")
+                if d.stop:
+                    break
+        else:
+            with ThreadPoolExecutor(nth) as ex:
+                list(ex.map(one, todo[i:i + 2000]))
         _save_fin(rows, done, done_p)
         rows.clear()
         log(f"재무 {min(i + 2000, len(todo))}/{len(todo)} · 호출 {d.used} · {time.time() - t0:.0f}초 · 응답 {d.codes}")
@@ -495,4 +507,6 @@ def status():
 
 
 if __name__ == "__main__":
-    {"krx": krx, "disc": disc, "multi": multi, "fin": fin, "status": status, "probe": probe}[sys.argv[1] if len(sys.argv) > 1 else "status"]()
+    cmd = sys.argv[1] if len(sys.argv) > 1 else "status"
+    fn = {"krx": krx, "disc": disc, "multi": multi, "fin": fin, "status": status, "probe": probe}[cmd]
+    fn(int(sys.argv[2])) if cmd == "fin" and len(sys.argv) > 2 else fn()
