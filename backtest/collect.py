@@ -481,7 +481,18 @@ def probe():
                 log(f"요약 {y} {rp} {n}개: {time.time() - t:.1f}초 status {j.get('status')} 행 {len(j.get('list') or [])}")
             except Exception as e:
                 log(f"요약 {y} {rp} {n}개: 실패 {type(e).__name__} {time.time() - t:.1f}초")
-    for y, rp in ((2016, "11011"), (2018, "11013"), (2021, "11012"), (2024, "11011")):
+    mm = pd.read_parquet(FIN_DIR / "multi.parquet", columns=["corp", "year", "rpt", "fs"])
+    cfs = mm[(mm.fs == "CFS") & (mm.year == 2016) & (mm.rpt == "11011")].corp.unique()[:6]
+    for fs in ("CFS", "OFS", "CFS"):
+        ts = []
+        for c in cfs:
+            t = time.time()
+            r = d.s.get(DART + "fnlttSinglAcntAll.json", params={"crtfc_key": d.key, "corp_code": c, "bsns_year": 2016, "reprt_code": "11011", "fs_div": fs}, timeout=60)
+            ts.append((round(time.time() - t, 1), r.json().get("status"), len(r.content) // 1024))
+        log(f"2016 사업보고서 {fs} (초, 상태, KB): {ts}")
+    t = time.time(); r = d.s.get(DART + "fnlttSinglAcntAll.json", params={"crtfc_key": d.key, "corp_code": cfs[0], "bsns_year": "2016", "reprt_code": "11011", "fs_div": "CFS"}, timeout=60)
+    log(f"문자열 연도: {time.time() - t:.1f}초")
+    for y, rp in ((2016, "11011"),):
         ts = []
         for c in corps[:8]:
             t = time.time()
