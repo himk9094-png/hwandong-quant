@@ -143,7 +143,7 @@ class Dart:
         p["crtfc_key"] = self.key
         for i in range(4):
             try:
-                r = self.s.get(DART + path, params=p, timeout=40)
+                r = self.s.get(DART + path, params=p, timeout=25)
                 j = r.json()
                 st = j.get("status")
                 if st == "020":                      # 하루 한도 초과
@@ -151,7 +151,8 @@ class Dart:
                     log("DART 하루 한도 도달 — 내일 이어받음")
                     return None
                 return j
-            except (requests.RequestException, ValueError):
+            except (requests.RequestException, ValueError) as e:
+                log(f"  DART 재시도 {i + 1}: {path} {type(e).__name__}")
                 time.sleep(2 * (i + 1))
         return {"status": "ERR"}
 
@@ -335,11 +336,16 @@ def multi():
             per.setdefault((y, rp), []).append(corp)
     log(f"요약 재무: {len(per)}개 기간, {sum(len(v) for v in per.values())}개 회사·기간 남음")
     rows = []
-    for (y, rp), corps in sorted(per.items()):
+    t0 = time.time()
+    for pi, ((y, rp), corps) in enumerate(sorted(per.items())):
         cum = rp in ("11012", "11014")
+        tp = time.time()
         for i in range(0, len(corps), 100):
             b = corps[i:i + 100]
+            tc = time.time()
             j = d.get("fnlttMultiAcnt.json", corp_code=",".join(b), bsns_year=y, reprt_code=rp)
+            if time.time() - tc > 20:
+                log(f"  느린 응답 {time.time() - tc:.0f}초 ({y} {rp} {i})")
             if j is None:
                 break
             if j.get("status") not in ("000", "013"):
@@ -363,14 +369,18 @@ def multi():
             for (corp, fs), v in rec.items():
                 rows.append({"corp": corp, "year": y, "rpt": rp, "fs": fs, **v})
             done.update(f"{c}_{y}_{rp}" for c in b)
+        # 기간마다 저장(중간에 끊겨도 이어받기)
+        if rows:
+            new = pd.DataFrame(rows)
+            old = pd.concat([old, new], ignore_index=True) if old is not None else new
+            old = old.drop_duplicates(["corp", "year", "rpt", "fs"], keep="last")
+            old.to_parquet(out_p, index=False)
+            rows = []
+        done_p.write_text(json.dumps(sorted(done)))
+        log(f"요약 재무 {pi + 1}/{len(per)} {y} {rp}: {len(corps)}개 회사 · {time.time() - tp:.0f}초 · 호출 누적 {d.used} · 전체 {time.time() - t0:.0f}초")
         if d.stop:
             break
-    if rows:
-        new = pd.DataFrame(rows)
-        allf = pd.concat([old, new], ignore_index=True) if old is not None else new
-        allf.drop_duplicates(["corp", "year", "rpt", "fs"], keep="last").to_parquet(out_p, index=False)
-    done_p.write_text(json.dumps(sorted(done)))
-    log(f"요약 재무 저장: +{len(rows)}행 · 호출 {d.used}")
+    log(f"요약 재무 끝 · 호출 {d.used}")
 
 
 def fin():
