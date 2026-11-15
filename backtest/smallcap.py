@@ -33,7 +33,7 @@ SLIP = 0.0025                     # 편도 슬리피지(소형주 호가 차이�
 MIN_VAL = 1e8                     # 20일 평균 거래대금 1억 원 이상만
 SMALL_Q = 0.20
 START = "20160401"
-EXCL_NAME = "스팩|리츠|REIT|인프라|선박|기업인수목적|ETN|ETF"
+EXCL_NAME = r"스팩|리츠|REIT|인프라|선박|기업인수목적|ETN|ETF|유전|\d+호|맥쿼리|투자회사"   # 펀드·투자회사형 종목
 
 
 def sell_tax(ymd: str) -> float:
@@ -77,7 +77,7 @@ def load():
     flags = pd.DataFrame(False, index=dates, columns=codes)
     if sect is not None:
         flags = sect.apply(lambda c: c.astype(str).str.contains("관리|환기|SPAC", regex=True, na=False))
-    common = pd.Index(codes).str[-1] == "0"
+    common = (pd.Index(codes).str[-1] == "0") & (pd.Index(codes).str[0] != "9")   # 보통주만, 해외기업(9로 시작) 제외
     okname = ~last.reindex(codes)["name"].astype(str).str.contains(EXCL_NAME, regex=True).values
     m = dict(dates=dates, codes=codes, close=close, open=opn, ret=ret.fillna(0.0), gap=gap, intra=intra, mcap=mcap,
              val20=val.rolling(20, min_periods=10).mean(), shares=shares, alive=alive, flags=flags,
@@ -87,6 +87,10 @@ def load():
 
 def fundamentals(m):
     """보고서별 TTM → 공시 다음 거래일부터 유효한 일별 행렬(종목 × 날짜)."""
+    if not (STORE / "fin" / "multi.parquet").exists() and not (STORE / "fin" / "fin.parquet").exists():
+        log("재무 데이터 없음 → 주가만 쓰는 전략(0)만 가능")
+        empty = pd.DataFrame(np.nan, index=m["dates"], columns=m["codes"])
+        return {k: empty for k in ["assets", "equity", "rev", "op", "ni", "gp", "cfo"]}
     cc = C.corp_map()
     corp2code = {}
     for code, corp in cc.items():
@@ -106,7 +110,9 @@ def fundamentals(m):
         df["src"] = src
         recs.append(df)
     if not recs:
-        raise SystemExit("재무 데이터가 없습니다 (store/fin)")
+        log("재무 데이터 없음 → 주가만 쓰는 전략(0)만 가능")
+        empty = pd.DataFrame(np.nan, index=m["dates"], columns=m["codes"])
+        return {k: empty for k in ["assets", "equity", "rev", "op", "ni", "gp", "cfo"]}
     R = pd.concat(recs, ignore_index=True)
     # 같은 (회사, 연도, 보고서)에 요약(m)과 전체(f)가 있으면 합침: 전체 재무가 있으면 그 값 우선, 없는 항목은 요약에서
     cols = ["rev", "rev_p", "op", "op_p", "ni", "ni_p", "assets", "equity", "gp", "gp_p", "cfo", "cfo_p"]
@@ -183,7 +189,9 @@ def picks(m, F, i: int, strat: int, n: int):
     gpa = (gp / assets).where(assets > 0)
     sh, sh1 = m["shares"].iloc[j].reindex(small), m["shares"].iloc[max(0, j - 250)].reindex(small)
     fscore = (ni > 0).astype(int) + (cfo > 0).astype(int) + (sh <= sh1 * 1.001).astype(int)
-    if strat == 1:
+    if strat == 0:
+        score = rank(cap)                                     # 시가총액 가장 작은 순
+    elif strat == 1:
         score = rank(pbr)
     elif strat == 2:
         score = rank(per) + rank(pbr) + rank(pcr)
@@ -211,7 +219,7 @@ def picks(m, F, i: int, strat: int, n: int):
     return list(score.index[:n])
 
 
-NAMES = {1: "소형주 저PBR", 2: "파마+LSV 콤보", 3: "슈퍼가치", 4: "신마법공식 2.0", 5: "F-스코어", 6: "슈퍼퀄리티", 7: "짬뽕"}
+NAMES = {0: "초소형주(시총 하위)", 1: "소형주 저PBR", 2: "파마+LSV 콤보", 3: "슈퍼가치", 4: "신마법공식 2.0", 5: "F-스코어", 6: "슈퍼퀄리티", 7: "짬뽕"}
 NEEDS_FULL = {2, 3, 5, 6, 7}           # 영업현금흐름 필요
 NEEDS_GP = {4, 6, 7}
 
@@ -267,21 +275,24 @@ def simulate(m, F, strat, freq, n, cost=True):
             total = cash + sum(w.values())
             tw = {c: total / len(tgt) for c in tgt} if tgt else {}
             tax = sell_tax(d)
+            tr0, cp0 = 0.0, 0.0
             for c in set(w) | set(tw):
                 cur, new = w.get(c, 0.0), tw.get(c, 0.0)
                 delta = new - cur
                 if abs(delta) < 1e-12:
                     continue
-                traded += abs(delta)
+                tr0 += abs(delta)
                 if cost:
                     fee = abs(delta) * (COMM + SLIP) + (abs(delta) * tax if delta < 0 else 0.0)
-                    costpaid += fee
+                    cp0 += fee
                     cash -= fee
                 cash -= delta
                 if new > 0:
                     w[c] = new
                 else:
                     w.pop(c, None)
+            traded += tr0 / total / 2          # 회전율: 한쪽(매수 또는 매도) 기준, 계좌 대비
+            costpaid += cp0 / total
             # 비용 차감으로 생긴 음수 현금은 비중을 살짝 줄여 맞춤
             if cash < 0 and w:
                 s = sum(w.values())
