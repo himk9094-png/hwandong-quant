@@ -441,6 +441,26 @@ def _save_fin(rows, done, done_p):
     done_p.write_text(json.dumps(sorted(done)))
 
 
+def probe():
+    """DART 요청 속도 점검: 묶음 크기별 요약 재무, 단일 전체 재무."""
+    d = Dart()
+    ccdf = d.corp_codes()
+    corps = list(ccdf[ccdf.stock != ""].corp)[:100]
+    for y, rp in ((2024, "11011"), (2017, "11013")):
+        for n in (5, 20, 50, 100):
+            t = time.time()
+            try:
+                r = d.s.get(DART + "fnlttMultiAcnt.json", params={"crtfc_key": d.key, "corp_code": ",".join(corps[:n]), "bsns_year": y, "reprt_code": rp}, timeout=60)
+                j = r.json()
+                log(f"요약 {y} {rp} {n}개: {time.time() - t:.1f}초 status {j.get('status')} 행 {len(j.get('list') or [])}")
+            except Exception as e:
+                log(f"요약 {y} {rp} {n}개: 실패 {type(e).__name__} {time.time() - t:.1f}초")
+    for c in corps[:5]:
+        t = time.time()
+        j = d.get("fnlttSinglAcntAll.json", corp_code=c, bsns_year=2023, reprt_code="11011", fs_div="CFS")
+        log(f"전체 {c}: {time.time() - t:.1f}초 status {j.get('status') if j else None}")
+
+
 def status():
     fs = sorted(KRX_DIR.glob("*.parquet"))
     print("KRX:", ", ".join(f"{f.stem}({pd.read_parquet(f, columns=['date']).date.nunique()}일)" for f in fs) or "없음")
@@ -454,4 +474,4 @@ def status():
 
 
 if __name__ == "__main__":
-    {"krx": krx, "disc": disc, "multi": multi, "fin": fin, "status": status}[sys.argv[1] if len(sys.argv) > 1 else "status"]()
+    {"krx": krx, "disc": disc, "multi": multi, "fin": fin, "status": status, "probe": probe}[sys.argv[1] if len(sys.argv) > 1 else "status"]()
