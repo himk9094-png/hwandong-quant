@@ -445,7 +445,10 @@ def probe():
     """DART 요청 속도 점검: 묶음 크기별 요약 재무, 단일 전체 재무."""
     d = Dart()
     ccdf = d.corp_codes()
-    corps = list(ccdf[ccdf.stock != ""].corp)[:100]
+    last = pd.read_parquet(sorted(KRX_DIR.glob("*.parquet"))[-1], columns=["code", "mcap"])
+    last = last.drop_duplicates("code", keep="last").sort_values("mcap")
+    cc = dict(zip(ccdf.stock, ccdf.corp))
+    corps = [cc[c] for c in last.code.astype(str) if c in cc][:100]          # 지금 상장된 소형주 100개
     for y, rp in ((2024, "11011"), (2017, "11013")):
         for n in (5, 20, 50, 100):
             t = time.time()
