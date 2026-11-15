@@ -292,19 +292,26 @@ def fin_tasks(px: pd.DataFrame, cc: dict) -> list[tuple]:
     return sorted(set(need), key=lambda t: (t[1], t[2], t[0]))
 
 
+def corp_map(px: pd.DataFrame | None = None) -> dict:
+    """KRX 종목코드 → DART 회사코드. 상장폐지돼 corpCode에 종목코드가 없는 회사는 이름으로(같은 이름이 하나뿐일 때)."""
+    ccdf = pd.read_parquet(STORE / "corp_codes.parquet")
+    cc = dict(zip(ccdf[ccdf.stock != ""].stock, ccdf[ccdf.stock != ""].corp))
+    if px is None:
+        px = krx_all()[["date", "code", "name"]]
+    by_name = ccdf.groupby("name").corp.agg(list)
+    for code, name in px.drop_duplicates("code", keep="last")[["code", "name"]].itertuples(index=False):
+        if code not in cc and name in by_name.index and len(by_name[name]) == 1:
+            cc[code] = by_name[name][0]
+    return cc
+
+
 def _cands(d):
     FIN_DIR.mkdir(parents=True, exist_ok=True)
     cc_p = STORE / "corp_codes.parquet"
     if not cc_p.exists() or time.time() - cc_p.stat().st_mtime > 20 * 86400:
         d.corp_codes().to_parquet(cc_p, index=False)
-    ccdf = pd.read_parquet(cc_p)
-    cc = dict(zip(ccdf[ccdf.stock != ""].stock, ccdf[ccdf.stock != ""].corp))
     px = krx_all()[["date", "code", "name", "sect", "mcap"]]
-    # 상장폐지돼 corpCode에 종목코드가 없는 회사: 이름으로 찾기(같은 이름이 하나뿐일 때)
-    by_name = ccdf.groupby("name").corp.agg(list)
-    for code, name in px.drop_duplicates("code", keep="last")[["code", "name"]].itertuples(index=False):
-        if code not in cc and name in by_name.index and len(by_name[name]) == 1:
-            cc[code] = by_name[name][0]
+    cc = corp_map(px)
     tasks = fin_tasks(px, cc)
     log(f"후보 (회사·보고서) {len(tasks)}건 · 종목코드↔DART 연결 {sum(1 for c in px.code.unique() if c in cc)}/{px.code.nunique()}")
     return tasks
