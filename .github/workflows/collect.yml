@@ -40,7 +40,8 @@ jobs:
           STEPS: ${{ github.event.inputs.steps || 'krx multi disc fin' }}
         run: |
           save() { (cd store && git config user.name "github-actions[bot]" && git config user.email "41898282+github-actions[bot]@users.noreply.github.com" && git add -A && { git diff --cached --quiet || { git commit -qm "data $1 $(date -u +%F)" && git push -q origin HEAD:data; }; }); }
-          for s in $STEPS; do python -u -m backtest.collect $s || echo "::warning::$s 단계 실패"; save $s; done
+          lim() { case $1 in multi) echo 2400;; krx|disc) echo 3600;; fin) echo 12600;; *) echo 600;; esac; }
+          for s in $STEPS; do timeout --signal=INT $(lim $s) python -u -X faulthandler -m backtest.collect $s || echo "::warning::$s 단계 실패/시간초과"; save $s; done
           python -m backtest.collect status
       - name: 저장 (data 브랜치)
         if: always()
