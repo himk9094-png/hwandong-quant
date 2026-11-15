@@ -1,0 +1,50 @@
+name: collect
+
+# 소형주 전략 백테스트용 과거 데이터 모으기 (data 브랜치 store/에 쌓음).
+# DART 하루 한도 때문에 매일 이어받는다. 다 모이면 이 예약은 할 일이 없어 1~2분 만에 끝난다.
+on:
+  schedule:
+    - cron: "23 1 * * *"     # 한국시간 10:23
+  workflow_dispatch:
+    inputs:
+      steps:
+        description: "실행할 단계 (krx disc fin)"
+        default: "krx disc fin"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: collect
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/checkout@v5
+        with:
+          ref: data
+          path: store
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt pyarrow
+      - name: 모으기
+        env:
+          KRX_API_KEY: ${{ secrets.KRX_API_KEY }}
+          DART_API_KEY: ${{ secrets.DART_API_KEY }}
+          STEPS: ${{ github.event.inputs.steps || 'krx disc fin' }}
+        run: |
+          for s in $STEPS; do python -u -m backtest.collect $s || echo "::warning::$s 단계 실패"; done
+          python -m backtest.collect status
+      - name: 저장 (data 브랜치)
+        if: always()
+        run: |
+          cd store
+          git config user.name "github-actions[bot]"; git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet || { git commit -qm "data $(date -u +%F)"; git push -q origin HEAD:data; }
