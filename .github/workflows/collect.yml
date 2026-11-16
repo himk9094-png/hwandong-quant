@@ -16,6 +16,7 @@ on:
 
 permissions:
   contents: write
+  actions: write          # 소형주 탭 갱신 후 화면 배포(ui) 실행
 
 concurrency:
   group: collect
@@ -57,3 +58,15 @@ jobs:
           git config user.name "github-actions[bot]"; git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
           git diff --cached --quiet || { git commit -qm "data $(date -u +%F)"; git push -q origin HEAD:data; }
+      - name: 소형주 탭 갱신 (docs/smallcap.json) + 분기 리밸런싱 알림
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python -u -m backtest.smallcap_app || { echo "::warning::소형주 탭 계산 실패"; exit 0; }
+          git config user.name "github-actions[bot]"; git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/smallcap.json
+          git diff --cached --quiet && exit 0
+          git commit -qm "소형주 탭 $(TZ=Asia/Seoul date +%F)"
+          for i in 1 2 3; do git pull -q --rebase origin main && git push -q origin HEAD:main && break; sleep 5; done
+          gh workflow run ui.yml --ref main || echo "화면 배포는 다음 일일 작업 때"

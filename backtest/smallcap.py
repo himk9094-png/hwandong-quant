@@ -1,6 +1,6 @@
 """강환국식 소형주 전략 7종 백테스트 (생존 편향 없음 · 공시일 이후 재무만 · 다음 날 시가 체결 · 현실 비용).
 
-  python -m backtest.smallcap                 # store/ 데이터로 전부 → docs/smallcap.json
+  python -m backtest.smallcap                 # store/ 데이터로 전부 → cache/smallcap_grid.json (앱 탭은 smallcap_app)
   python -m backtest.smallcap --quick         # 분기 리밸런싱만
 
 전략 (소형주 = 거래 가능한 보통주 중 시가총액 하위 20%)
@@ -27,7 +27,7 @@ import pandas as pd
 from backtest import collect as C
 
 STORE = C.STORE
-OUT = C.ROOT / "docs" / "smallcap.json"
+OUT = C.ROOT / "cache" / "smallcap_grid.json"
 COMM = 0.00015
 SLIP = 0.0025                     # 편도 슬리피지(소형주 호가 차이·충격)
 MIN_VAL = 1e8                     # 20일 평균 거래대금 1억 원 이상만
@@ -85,12 +85,38 @@ def load():
     return m
 
 
+RISK_Y = r"유상증자결정|전환사채권발행결정|신주인수권부사채권발행결정|교환사채권발행결정|감자결정"
+RISK_FILTER = False
+
+
+def risk_matrix(m):
+    """종목 × 날짜: 최근 250거래일 안에 희석·감자 결정 공시가 있었으면 True (🟡)."""
+    import glob
+    fs = sorted(glob.glob(str(STORE / "disc" / "B_*.parquet")))
+    if not fs:
+        return pd.DataFrame(False, index=m["dates"], columns=m["codes"])
+    b = pd.concat([pd.read_parquet(f) for f in fs], ignore_index=True)
+    b = b[b.report.str.contains(RISK_Y, regex=True)]
+    b = b.drop_duplicates(["stock", "date"])
+    dates = pd.Index(m["dates"])
+    b["i"] = dates.searchsorted(b.date.astype(str).values, side="left")        # 공시 당일(장 마감 후 공시 포함) 이후 거래일부터
+    b = b[b.i < len(dates)]
+    ev = pd.DataFrame(0, index=range(len(dates)), columns=m["codes"], dtype="int8")
+    for code, g in b.groupby("stock"):
+        if code in ev.columns:
+            ev.loc[g.i.values, code] = 1
+    ev.index = dates
+    r = ev.rolling(250, min_periods=1).max().astype(bool)
+    log(f"위험 공시(🟡) {len(b)}건 · 종목 {b.stock.nunique()}개")
+    return r
+
+
 def fundamentals(m):
     """보고서별 TTM → 공시 다음 거래일부터 유효한 일별 행렬(종목 × 날짜)."""
     if not (STORE / "fin" / "multi.parquet").exists() and not (STORE / "fin" / "fin.parquet").exists():
         log("재무 데이터 없음 → 주가만 쓰는 전략(0)만 가능")
         empty = pd.DataFrame(np.nan, index=m["dates"], columns=m["codes"])
-        return {k: empty for k in ["assets", "equity", "rev", "op", "ni", "gp", "cfo"]}
+        return {k: empty for k in ["assets", "equity", "period", "rev", "op", "ni", "gp", "cfo"]}
     cc = C.corp_map()
     corp2code = {}
     for code, corp in cc.items():
@@ -112,7 +138,7 @@ def fundamentals(m):
     if not recs:
         log("재무 데이터 없음 → 주가만 쓰는 전략(0)만 가능")
         empty = pd.DataFrame(np.nan, index=m["dates"], columns=m["codes"])
-        return {k: empty for k in ["assets", "equity", "rev", "op", "ni", "gp", "cfo"]}
+        return {k: empty for k in ["assets", "equity", "period", "rev", "op", "ni", "gp", "cfo"]}
     R = pd.concat(recs, ignore_index=True)
     # 같은 (회사, 연도, 보고서)에 요약(m)과 전체(f)가 있으면 합침: 전체 재무가 있으면 그 값 우선, 없는 항목은 요약에서
     cols = ["rev", "rev_p", "op", "op_p", "ni", "ni_p", "assets", "equity", "gp", "gp_p", "cfo", "cfo_p"]
@@ -156,7 +182,7 @@ def fundamentals(m):
     T["maxp"] = T.groupby("code").period.cummax()
     T = T[T.period >= T.maxp]
     F = {}
-    for k in ["assets", "equity"] + flows:
+    for k in ["assets", "equity", "period"] + flows:
         p = T.pivot_table(index="eff", columns="code", values=k, aggfunc="last")
         F[k] = p.reindex(index=dates, columns=m["codes"]).ffill(limit=400)
     log(f"재무: 보고서 {len(T)}건 · 종목 {T.code.nunique()}개 · GP 있음 {T.gp.notna().mean():.0%} · CFO 있음 {T.cfo.notna().mean():.0%}")
@@ -168,16 +194,18 @@ def rank(s: pd.Series, asc=True):
     return s.rank(ascending=asc, pct=True)
 
 
-def picks(m, F, i: int, strat: int, n: int):
-    """i번째 날의 '전 거래일 종가' 기준 종목 선택."""
-    j = i - 1
-    d = m["dates"][j]
+def factors(m, F, j: int, trade_ok=None, risk=None):
+    """j번째 날 종가 기준 소형주(시총 하위 20%) 후보와 팩터 표. trade_ok: 다음 날 거래되는 종목(백테스트용)."""
+    risk = RISK_FILTER if risk is None else risk
     mc = m["mcap"].iloc[j]
     ok = m["alive"].iloc[j] & m["static_ok"] & ~m["flags"].iloc[j] & (m["val20"].iloc[j] >= MIN_VAL) & (mc > 0)
-    ok &= m["alive"].iloc[i]                       # 리밸런싱 날 거래되는 종목만(정지 제외)
+    if trade_ok is not None:
+        ok &= trade_ok                             # 리밸런싱 날 거래되는 종목만(정지 제외)
+    if risk and "risk" in m:
+        ok &= ~m["risk"].iloc[j]
     mc = mc[ok]
     if len(mc) < 50:
-        return []
+        return None
     small = mc[mc <= mc.quantile(SMALL_Q)].index
     g = lambda k: F[k].iloc[j].reindex(small)
     cap = mc.reindex(small)
@@ -185,45 +213,53 @@ def picks(m, F, i: int, strat: int, n: int):
     # 재무 단위 오류 방지: 자본·자산이 시총의 50배를 넘거나 자본 > 자산이면 버림
     bad = (eq > cap * 50) | (assets > cap * 200) | (eq > assets * 1.01)
     eq, ni, rev, cfo, gp, assets = (x.where(~bad) for x in (eq, ni, rev, cfo, gp, assets))
-    pbr = (cap / eq).where(eq > 0)
-    per = (cap / ni).where(ni > 0)
-    psr = (cap / rev).where(rev > 0)
-    pcr = (cap / cfo).where(cfo > 0)
-    gpa = (gp / assets).where(assets > 0)
     sh, sh1 = m["shares"].iloc[j].reindex(small), m["shares"].iloc[max(0, j - 250)].reindex(small)
-    fscore = (ni > 0).astype(int) + (cfo > 0).astype(int) + (sh <= sh1 * 1.001).astype(int)
+    if "cumidx" not in m:
+        m["cumidx"] = (1 + m["ret"]).cumprod()
+    cum = m["cumidx"]
+    return pd.DataFrame({
+        "cap": cap, "eq": eq, "ni": ni, "cfo": cfo,
+        "pbr": (cap / eq).where(eq > 0), "per": (cap / ni).where(ni > 0), "psr": (cap / rev).where(rev > 0),
+        "pcr": (cap / cfo).where(cfo > 0), "gpa": (gp / assets).where(assets > 0),
+        "fscore": (ni > 0).astype(int) + (cfo > 0).astype(int) + (sh <= sh1 * 1.001).astype(int),
+        "mom": cum.iloc[j].reindex(small) / cum.iloc[max(0, j - 250)].reindex(small) - 1,   # 12개월 수익률(조정)
+    })
+
+
+def score(X: pd.DataFrame, strat: int) -> pd.Series:
+    """낮을수록 좋은 점수(NaN = 대상 아님)."""
+    cap, eq, ni, cfo = X["cap"], X["eq"], X["ni"], X["cfo"]          # X.eq 는 DataFrame 메서드라 [] 로
+    pbr, per, psr, pcr, gpa, fscore, mom = (X[k] for k in ("pbr", "per", "psr", "pcr", "gpa", "fscore", "mom"))
     if strat == 12:                                          # 초소형주 + 흑자 + 자본잠식 아님
-        score = rank(cap).where((ni > 0) & (eq > 0))
-    elif strat == 11:                                          # 저PBR + 흑자(최근 4분기 순이익 > 0)
-        score = rank(pbr).where(ni > 0)
-    elif strat == 0:
-        score = rank(cap)                                     # 시가총액 가장 작은 순
-    elif strat == 1:
-        score = rank(pbr)
-    elif strat == 2:
-        score = rank(per) + rank(pbr) + rank(pcr)
-        score = score.where(per.notna() & pbr.notna() & pcr.notna())
-    elif strat == 3:
-        score = rank(per) + rank(pbr) + rank(psr) + rank(pcr)
-        score = score.where(per.notna() & pbr.notna() & psr.notna() & pcr.notna())
-    elif strat == 4:
-        score = rank(pbr) + rank(gpa, asc=False)
-        score = score.where(pbr.notna() & gpa.notna())
-    elif strat == 5:
-        score = rank(pbr).where((fscore == 3) & cfo.notna())
-    elif strat == 6:
-        score = rank(gpa, asc=False).where((fscore == 3) & cfo.notna())
-    elif strat == 7:
-        # 12개월 수익률(조정): 누적 수익률 지수로 계산
-        cum = m["cumidx"]
-        mom = cum.iloc[j].reindex(small) / cum.iloc[max(0, j - 250)].reindex(small) - 1
+        return rank(cap).where((ni > 0) & (eq > 0))
+    if strat == 11:                                          # 저PBR + 흑자(최근 4분기 순이익 > 0)
+        return rank(pbr).where(ni > 0)
+    if strat == 0:
+        return rank(cap)                                     # 시가총액 가장 작은 순
+    if strat == 1:
+        return rank(pbr)
+    if strat == 2:
+        return (rank(per) + rank(pbr) + rank(pcr)).where(per.notna() & pbr.notna() & pcr.notna())
+    if strat == 3:
+        return (rank(per) + rank(pbr) + rank(psr) + rank(pcr)).where(per.notna() & pbr.notna() & psr.notna() & pcr.notna())
+    if strat == 4:
+        return (rank(pbr) + rank(gpa, asc=False)).where(pbr.notna() & gpa.notna())
+    if strat == 5:
+        return rank(pbr).where((fscore == 3) & cfo.notna())
+    if strat == 6:
+        return rank(gpa, asc=False).where((fscore == 3) & cfo.notna())
+    if strat == 7:
         v = rank(per) + rank(pbr) + rank(psr) + rank(pcr)
-        score = rank(v) + rank(gpa, asc=False) + rank(mom, asc=False)
-        score = score.where(v.notna() & gpa.notna() & mom.notna())
-    else:
-        raise ValueError(strat)
-    score = score.dropna().sort_values()
-    return list(score.index[:n])
+        return (rank(v) + rank(gpa, asc=False) + rank(mom, asc=False)).where(v.notna() & gpa.notna() & mom.notna())
+    raise ValueError(strat)
+
+
+def picks(m, F, i: int, strat: int, n: int):
+    """i번째 날의 '전 거래일 종가' 기준 종목 선택."""
+    X = factors(m, F, i - 1, trade_ok=m["alive"].iloc[i])
+    if X is None:
+        return []
+    return list(score(X, strat).dropna().sort_values().index[:n])
 
 
 NAMES = {0: "초소형주(시총 하위)", 12: "초소형주+흑자", 11: "저PBR+흑자", 1: "소형주 저PBR", 2: "파마+LSV 콤보", 3: "슈퍼가치", 4: "신마법공식 2.0", 5: "F-스코어", 6: "슈퍼퀄리티", 7: "짬뽕"}
@@ -358,6 +394,7 @@ def main():
                     continue
                 rows.append({"strat": s, "name": NAMES[s], "freq": f, "n": n, **{k: v for k, v in r.items() if k != "curve"}})
                 log(f"{NAMES[s]:10s} {f} {n:2d}종목: 연 {r['cagr']*100:5.1f}% · 낙폭 {r['mdd']*100:5.1f}% · 회전 {r['turnover']:.1f}배/년 · 비용 {r['cost']*100:.1f}%/년")
+    OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps({"made": dt.date.today().isoformat(), "rows": rows}, ensure_ascii=False, indent=1))
 
 

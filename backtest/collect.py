@@ -75,6 +75,7 @@ def krx():
     empty_p = KRX_DIR / "holidays.json"
     holidays = set(json.loads(empty_p.read_text())) if empty_p.exists() else set()
     end = today_kst() - dt.timedelta(days=1)
+    recent = (today_kst() - dt.timedelta(days=1)).strftime("%Y%m%d")
     for year in range(START.year, end.year + 1):
         p = KRX_DIR / f"{year}.parquet"
         old = pd.read_parquet(p) if p.exists() else None
@@ -94,7 +95,8 @@ def krx():
         with ThreadPoolExecutor(4) as ex:
             for ymd, rows in ex.map(one, days):
                 if not rows:
-                    holidays.add(ymd)
+                    if ymd < recent:            # 어제 시세는 KRX가 아침에야 올림 → 비었다고 휴장일로 적지 않음
+                        holidays.add(ymd)
                     continue
                 df = pd.DataFrame(rows)
                 df["mkt"] = df["MKT_NM"].map({"KOSPI": "P", "KOSDAQ": "Q"}).fillna("Q") if "MKT_NM" in df else "?"
@@ -301,7 +303,24 @@ def fin_tasks(px: pd.DataFrame, cc: dict) -> list[tuple]:
                     continue
                 need.append((corp, ry, rp))
                 need.append((corp, (y - 1) if rp != "11011" else ry, "11011"))
+    # 다가올 리밸런싱용: 마지막 거래일의 하위 30% → 그날까지 제출 기한이 지난 최신 보고서
+    last = days[-1]
+    ly, md = int(last[:4]), last[4:]
+    ry, rp = ((ly, "11014") if md >= "1116" else (ly, "11012") if md >= "0816" else
+              (ly, "11013") if md >= "0516" else (ly - 1, "11011") if md >= "0401" else (ly - 1, "11014"))
+    snap = px[px.date == last]
+    for code in snap[snap.mcap <= snap.mcap.quantile(0.30)].code:
+        corp = cc.get(code)
+        if corp:
+            need.append((corp, ry, rp))
+            need.append((corp, ry - 1 if rp != "11011" else ry, "11011"))
     return sorted(set(need), key=lambda t: (t[1], t[2], t[0]))
+
+
+def _recent(y: int, rp: str) -> bool:
+    """제출 기한이 지난 지 120일이 안 된 보고서(늦게 내는 회사가 있을 수 있어 '없음'으로 확정하지 않음)."""
+    due = {"11013": (y, 5, 15), "11012": (y, 8, 14), "11014": (y, 11, 14), "11011": (y + 1, 3, 31)}[rp]
+    return (today_kst() - dt.date(*due)).days < 120
 
 
 def corp_map(px: pd.DataFrame | None = None) -> dict:
@@ -379,7 +398,8 @@ def multi():
                     c.setdefault(k, _num(r.get("thstrm_amount")))
             for (corp, fs), v in rec.items():
                 rows.append({"corp": corp, "year": y, "rpt": rp, "fs": fs, **v})
-            done.update(f"{c}_{y}_{rp}" for c in b)
+            got = {corp for corp, _ in rec}
+            done.update(f"{c}_{y}_{rp}" for c in b if c in got or not _recent(y, rp))
         # 기간마다 저장(중간에 끊겨도 이어받기)
         if rows:
             new = pd.DataFrame(rows)
