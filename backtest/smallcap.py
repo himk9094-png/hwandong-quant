@@ -32,6 +32,7 @@ COMM = 0.00015
 SLIP = 0.0025                     # 편도 슬리피지(소형주 호가 차이·충격)
 MIN_VAL = 1e8                     # 20일 평균 거래대금 1억 원 이상만
 SMALL_Q = 0.20
+CAP_LO = 0.0                  # 시총 하위 CAP_LO ~ SMALL_Q 구간만(0, 0.2 = 소형주 / 0.8, 1.0 = 대형주)
 START = "20160401"
 EXCL_NAME = r"스팩|리츠|REIT|인프라|선박|기업인수목적|ETN|ETF|유전|\d+호|맥쿼리|투자회사"   # 펀드·투자회사형 종목
 
@@ -113,7 +114,7 @@ def risk_matrix(m):
 
 def fundamentals(m):
     """보고서별 TTM → 공시 다음 거래일부터 유효한 일별 행렬(종목 × 날짜)."""
-    if not (STORE / "fin" / "multi.parquet").exists() and not (STORE / "fin" / "fin.parquet").exists():
+    if not any((STORE / "fin" / n).exists() for n in ("multi.parquet", "fin.parquet", "bulk.parquet")):
         log("재무 데이터 없음 → 주가만 쓰는 전략(0)만 가능")
         empty = pd.DataFrame(np.nan, index=m["dates"], columns=m["codes"])
         return {k: empty for k in ["assets", "equity", "period", "rev", "op", "ni", "gp", "cfo"]}
@@ -126,8 +127,10 @@ def fundamentals(m):
     fp = STORE / "fin" / "fin.parquet"
     mm = pd.read_parquet(mp) if mp.exists() else pd.DataFrame()
     ff = pd.read_parquet(fp) if fp.exists() else pd.DataFrame()
+    bp = STORE / "fin" / "bulk.parquet"      # DART 일괄 파일(상장사 전체, 공시일 = 법정기한) — 우선순위 가장 낮음
+    bb = pd.read_parquet(bp) if bp.exists() else pd.DataFrame()
     recs = []
-    for src, df in (("m", mm), ("f", ff)):
+    for src, df in (("m", mm), ("f", ff), ("z", bb)):
         if df.empty:
             continue
         df = df.copy()
@@ -169,6 +172,8 @@ def fundamentals(m):
         out.append(rec)
     T = pd.DataFrame(out)
     T["code"] = T.corp.map(corp2code)
+    sc = T.corp.astype(str).str.startswith("S")                  # 회사코드 없는 상장폐지 종목(일괄 파일): S+종목코드
+    T.loc[sc, "code"] = T.loc[sc, "corp"].str[1:]
     T = T.dropna(subset=["code"])
     T = T[T.code.isin(m["codes"])]
     # 같은 날 여러 보고서(정정 등)면 더 최근 기간을 씀
@@ -206,7 +211,7 @@ def factors(m, F, j: int, trade_ok=None, risk=None):
     mc = mc[ok]
     if len(mc) < 50:
         return None
-    small = mc[mc <= mc.quantile(SMALL_Q)].index
+    small = mc[(mc <= mc.quantile(SMALL_Q)) & ((mc > mc.quantile(CAP_LO)) if CAP_LO > 0 else True)].index
     g = lambda k: F[k].iloc[j].reindex(small)
     cap = mc.reindex(small)
     eq, ni, rev, cfo, gp, assets = g("equity"), g("ni"), g("rev"), g("cfo"), g("gp"), g("assets")

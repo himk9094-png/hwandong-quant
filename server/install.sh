@@ -135,8 +135,7 @@ __PY__
 # DART bulk financial statements (BS/PL/CF zips, 2015~) -> GitHub release "dart-bulk" assets.
 # Runs in the background (survives closing this window). Progress: hq log / result: server branch.
 cmd_dartbulk() {
-  systemctl reset-failed hq-dartbulk 2>/dev/null
-  systemd-run --unit hq-dartbulk --collect /usr/local/bin/hq _dartbulk >/dev/null && \
+  systemctl start --no-block hq-dartbulk.service && \
     echo "Started in background. You can close this window. (progress: journalctl -u hq-dartbulk -f)"
 }
 _dartbulk() {
@@ -249,8 +248,27 @@ Unit=hq@coin.service
 [Install]
 WantedBy=timers.target
 __U__
+cat > /etc/systemd/system/hq-dartbulk.service <<'__U__'
+[Unit]
+Description=hwandong-quant: DART bulk files -> GitHub release
+Wants=network-online.target
+After=network-online.target
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/hq _dartbulk
+TimeoutStartSec=3600
+__U__
+cat > /etc/systemd/system/hq-dartbulk.timer <<'__U__'
+[Unit]
+Description=hwandong-quant DART bulk weekly (Mon 23:30 KST, before the 00:07 collect run)
+[Timer]
+OnCalendar=Mon *-*-* 23:30:00 Asia/Seoul
+Persistent=true
+[Install]
+WantedBy=timers.target
+__U__
 systemctl daemon-reload
-systemctl enable --now hq-daily.timer hq-coin.timer >/dev/null
+systemctl enable --now hq-daily.timer hq-coin.timer hq-dartbulk.timer >/dev/null
 
 if [ ! -s "$D/token" ]; then hq token || true; else echo "Keeping saved token (change: hq token)"; fi
 echo
