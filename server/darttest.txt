@@ -1,11 +1,50 @@
-darttest 2026-11-17 23:58:05 KST ip=13.124.17.147
-list page: HTTP 200, 92030 bytes, title: 
-zip names found: 176
-2015_4Q_BS_20230503040109.zip
-2015_4Q_CE_20230503040337.zip
-2015_4Q_CF_20230503040246.zip
-2015_4Q_PL_20230503040205.zip
-2016_1Q_BS_20230119040459.zip
---- download calls in page:
-download 2015_4Q_BS_20230503040109.zip: 200 text/html; charset=utf-8, 975 bytes, type: HTML document, Unicode text, UTF-8 text, with CRLF line terminators
-  not a zip: File is not a zip file b'\r\n\r\n\r\n\r\n<!DOCTYPE html>\r\n<html>\r\n<head>\r\n<meta charset="utf-8">\r\n<meta name="viewport" content="user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, width=device-width">\r\n<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />\r\n<meta http-equiv="x-ua-compatible" c'
+darttest v2 2026-11-18 00:01:14 KST ip=13.124.17.147
+list page: HTTP 200, 92030 bytes, zips: 176
+test file: 2026_3Q_BS_20261117050134.zip
+--- page lines around first zip:
+80-									
+81-									
+82:										<div><a href="#download_2026_1분기보고서_BS" style="text-decoration: underline;" title="2026 1분기보고서 재무상태표 다운로드" onclick="download_ext002('2026','FQ', 'BS', '2026_1Q_BS_20261117041631.zip'); return false;">다운로드</a></div>
+83-									
+84-								
+--
+88-									
+89-									
+90:										<div><a href="#download_2026_1분기보고서_PL" style="text-decoration: underline;" title="2026 1분기보고서 손익계산서 다운로드" onclick="download_ext002('2026','FQ', 'PL', '2026_1Q_PL_20261117041938.zip'); return false;">다운로드</a></div>
+91-									
+92-								
+--
+96-									
+97-									
+98:										<div><a href="#download_2026_1분기보고서_CF" style="text-decoration: underline;" title="2026 1분기보고서 현금흐름표 다운로드" onclick="download_ext002('2026','FQ', 'CF', '2026_1Q_CF_20261117042218.zip'); return false;">다운로드</a></div>
+99-									
+100-								
+--- forms / scripts mentioning download:
+82:										<div><a href="#download_2026_1분기보고서_BS" style="text-decoration: underline;" title="2026 1분기보고서 재무상태표 다운로드" onclick="download_ext002('2026','FQ', 'BS', '2026_1Q_BS_20261117041631.zip'); return false;"
+90:										<div><a href="#download_2026_1분기보고서_PL" style="text-decoration: underline;" title="2026 1분기보고서 손익계산서 다운로드" onclick="download_ext002('2026','FQ', 'PL', '2026_1Q_PL_20261117041938.zip'); return false;"
+98:										<div><a href="#download_2026_1분기보고서_CF" style="text-decoration: underline;" title="2026 1분기보고서 현금흐름표 다운로드" onclick="download_ext002('2026','FQ', 'CF', '2026_1Q_CF_20261117042218.zip'); return false;"
+106:										<div><a href="#download_2026_1분기보고서_CE" style="text-decoration: underline;" title="2026 1분기보고서 자본변동표 다운로드" onclick="download_ext002('2026','FQ', 'CE', '2026_1Q_CE_20261117042501.zip'); return false;
+133:										<div><a href="#download_2026_반기보고서_BS" style="text-decoration: underline;" title="2026 반기보고서 재무상태표 다운로드" onclick="download_ext002('2026','HY', 'BS', '2026_2Q_BS_20261117043904.zip'); return false;">
+141:										<div><a href="#download_2026_반기보고서_PL" style="text-decoration: underline;" title="2026 반기보고서 손익계산서 다운로드" onclick="download_ext002('2026','HY', 'PL', '2026_2Q_PL_20261117044212.zip'); return false;">
+149:										<div><a href="#download_2026_반기보고서_CF" style="text-decoration: underline;" title="2026 반기보고서 현금흐름표 다운로드" onclick="download_ext002('2026','HY', 'CF', '2026_2Q_CF_20261117044452.zip'); return false;">
+157:										<div><a href="#download_2026_반기보고서_CE" style="text-decoration: underline;" title="2026 반기보고서 자본변동표 다운로드" onclick="download_ext002('2026','HY', 'CE', '2026_2Q_CE_20261117044736.zip'); return false;">
+184:										<div><a href="#download_2026_3분기보고서_BS" style="text-decoration: underline;" title="2026 3분기보고서 재무상태표 다운로드" onclick="download_ext002('2026','TQ', 'BS', '2026_3Q_BS_20261117050134.zip'); return false;
+192:										<div><a href="#download_2026_3분기보고서_PL" style="text-decoration: underline;" title="2026 3분기보고서 손익계산서 다운로드" onclick="download_ext002('2026','TQ', 'PL', '2026_3Q_PL_20261117050437.zip'); return false;
+200:										<div><a href="#download_2026_3분기보고서_CF" style="text-decoration: underline;" title="2026 3분기보고서 현금흐름표 다운로드" onclick="download_ext002('2026','TQ', 'CF', '2026_3Q_CF_20261117050716.zip'); return false;
+208:										<div><a href="#download_2026_3분기보고서_CE" style="text-decoration: underline;" title="2026 3분기보고서 자본변동표 다운로드" onclick="download_ext002('2026','TQ', 'CE', '2026_3Q_CE_20261117051000.zip'); return false;
+248:										<div><a href="#download_2025_1분기보고서_BS" style="text-decoration: underline;" title="2025 1분기보고서 재무상태표 다운로드" onclick="download_ext002('2025','FQ', 'BS', '2025_1Q_BS_20261031030342.zip'); return false;
+256:										<div><a href="#download_2025_1분기보고서_PL" style="text-decoration: underline;" title="2025 1분기보고서 손익계산서 다운로드" onclick="download_ext002('2025','FQ', 'PL', '2025_1Q_PL_20261031030729.zip'); return false;
+264:										<div><a href="#download_2025_1분기보고서_CF" style="text-decoration: underline;" title="2025 1분기보고서 현금흐름표 다운로드" onclick="download_ext002('2025','FQ', 'CF', '2025_1Q_CF_20261031031028.zip'); return false;
+272:										<div><a href="#download_2025_1분기보고서_CE" style="text-decoration: underline;" title="2025 1분기보고서 자본변동표 다운로드" onclick="download_ext002('2025','FQ', 'CE', '2025_1Q_CE_20261031031333.zip'); return false;
+299:										<div><a href="#download_2025_반기보고서_BS" style="text-decoration: underline;" title="2025 반기보고서 재무상태표 다운로드" onclick="download_ext002('2025','HY', 'BS', '2025_2Q_BS_20261001035626.zip'); return false;">
+307:										<div><a href="#download_2025_반기보고서_PL" style="text-decoration: underline;" title="2025 반기보고서 손익계산서 다운로드" onclick="download_ext002('2025','HY', 'PL', '2025_2Q_PL_20261001035951.zip'); return false;">
+315:										<div><a href="#download_2025_반기보고서_CF" style="text-decoration: underline;" title="2025 반기보고서 현금흐름표 다운로드" onclick="download_ext002('2025','HY', 'CF', '2025_2Q_CF_20261001040307.zip'); return false;">
+323:										<div><a href="#download_2025_반기보고서_CE" style="text-decoration: underline;" title="2025 반기보고서 자본변동표 다운로드" onclick="download_ext002('2025','HY', 'CE', '2025_2Q_CE_20261001040620.zip'); return false;">
+350:										<div><a href="#download_2025_3분기보고서_BS" style="text-decoration: underline;" title="2025 3분기보고서 재무상태표 다운로드" onclick="download_ext002('2025','TQ', 'BS', '2025_3Q_BS_20261117032908.zip'); return false;
+358:										<div><a href="#download_2025_3분기보고서_PL" style="text-decoration: underline;" title="2025 3분기보고서 손익계산서 다운로드" onclick="download_ext002('2025','TQ', 'PL', '2025_3Q_PL_20261117033225.zip'); return false;
+366:										<div><a href="#download_2025_3분기보고서_CF" style="text-decoration: underline;" title="2025 3분기보고서 현금흐름표 다운로드" onclick="download_ext002('2025','TQ', 'CF', '2025_3Q_CF_20261117033509.zip'); return false;
+374:										<div><a href="#download_2025_3분기보고서_CE" style="text-decoration: underline;" title="2025 3분기보고서 자본변동표 다운로드" onclick="download_ext002('2025','TQ', 'CE', '2025_3Q_CE_20261117033802.zip'); return false;
+401:										<div><a href="#download_2025_사업보고서_BS" style="text-decoration: underline;" title="2025 사업보고서 재무상태표 다운로드" onclick="download_ext002('2025','FY', 'BS', '2025_4Q_BS_20261117035210.zip'); return false;">
+[get] no: 200 text/html; charset=utf-8 975 bytes:  function fncGoAfterErrorPage(){ history.back(-2); } 	 		메인으로가기 		 			서비스 이용에 불편을 드려 대단히 죄송합니다. 			잠시후에 다시 이용해 주시기 바랍니�
+[post] no: 200 text/html; charset=utf-8 975 bytes:  function fncGoAfterErrorPage(){ history.back(-2); } 	 		메인으로가기 		 			서비스 이용에 불편을 드려 대단히 죄송합니다. 			잠시후에 다시 이용해 주시기 바랍니�
+[post2] no: 302  0 bytes: 
