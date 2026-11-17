@@ -87,7 +87,8 @@ def load():
     okname = ~last.reindex(codes)["name"].astype(str).str.contains(EXCL_NAME, regex=True).values
     m = dict(dates=dates, codes=codes, close=close, open=opn, ret=ret.fillna(0.0), gap=gap, intra=intra, mcap=mcap,
              val20=val.rolling(20, min_periods=10).mean(), shares=shares, alive=alive, flags=flags,
-             static_ok=pd.Series(common & okname, index=codes), names=last.reindex(codes)["name"], kospi=kospi)
+             static_ok=pd.Series(common & okname, index=codes), names=last.reindex(codes)["name"], kospi=kospi,
+             val=val.astype("float32"))
     return m
 
 

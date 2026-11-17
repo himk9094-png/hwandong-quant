@@ -2,7 +2,8 @@
 (function(){
 "use strict";
 var J=null,loading=false,err=false,KEY="hq_tp_open";
-var COL=["#f4c04e","#5aa9ff","#8f9ab3"];
+var COL=["#f4c04e","#5aa9ff","#3ecf8e","#e07bff","#ff8a5c"],GREY="#8f9ab3";
+function colr(L,i){return L.b?GREY:COL[i%COL.length]}
 function X(){return window.HQ}
 function pc(v,sign){return v==null?"–":(sign&&v>0?"+":"")+v.toFixed(1)+"%"}
 function isOpen(){try{return localStorage.getItem(KEY)!=="0"}catch(e){return true}}
@@ -19,7 +20,7 @@ function chart(lines,M){
   [0.25,0.5,1,2,4,8,16,32].forEach(function(v){if(v<lo*0.98||v>hi*1.02)return;var y=yy(v);mk("line",{x1:pl,x2:W-pr,y1:y,y2:y,stroke:"#2c3754","stroke-width":1});var t=mk("text",{x:pl-6,y:y+5,"text-anchor":"end","font-size":15,fill:"#8f9ab3"});t.textContent=v+"배"});
   M.forEach(function(m,i){var y=m.slice(0,4);if(m.slice(5)==="01"&&(+y)%2===0){var t=mk("text",{x:xx(i),y:H-5,"text-anchor":"middle","font-size":15,fill:"#8f9ab3"});t.textContent="'"+y.slice(2)}});
   lines.slice().reverse().forEach(function(L,ri){var i=lines.length-1-ri,d="",pen=false;L.c.forEach(function(v,k){if(v>0){d+=(pen?"L":"M")+xx(k).toFixed(1)+","+yy(v).toFixed(1);pen=true}else pen=false});
-    var p=mk("path",{d:d,fill:"none",stroke:COL[i],"stroke-width":i===0?2.5:i===1?1.8:1.5,"stroke-linejoin":"round"});if(i===2)p.setAttribute("stroke-dasharray","4 4")});
+    var p=mk("path",{d:d,fill:"none",stroke:colr(L,i),"stroke-width":i===0?2.5:L.b?1.5:1.8,"stroke-linejoin":"round"});if(L.b)p.setAttribute("stroke-dasharray","4 4")});
   return svg;
 }
 function card(k){
@@ -33,7 +34,7 @@ function card(k){
   var body=el("div");body.style.marginTop="8px";
   body.appendChild(chart(T.lines,J.months));
   var tb=el("table","scrollt");tb.style.marginTop="6px";var hr=el("tr");["","연수익","최대낙폭","26년","25년","24년"].forEach(function(h){hr.appendChild(el("th",null,h))});tb.appendChild(hr);
-  T.lines.forEach(function(Ln,i){var tr=el("tr"),yy=Ln.y||{};var td=el("td");var sw=el("span");sw.style.cssText="display:inline-block;width:12px;height:0;border-top:3px "+(i===2?"dotted ":"solid ")+COL[i]+";margin-right:6px;vertical-align:middle";td.appendChild(sw);td.appendChild(document.createTextNode(Ln.name));tr.appendChild(td);
+  T.lines.forEach(function(Ln,i){var tr=el("tr"),yy=Ln.y||{};var td=el("td");var sw=el("span");sw.style.cssText="display:inline-block;width:12px;height:0;border-top:3px "+(Ln.b?"dotted ":"solid ")+colr(Ln,i)+";margin-right:6px;vertical-align:middle";td.appendChild(sw);td.appendChild(document.createTextNode(Ln.name));tr.appendChild(td);
     [[Ln.cagr,0],[Ln.mdd,0],[yy["2026"],1],[yy["2025"],1],[yy["2024"],1]].forEach(function(v,j){tr.appendChild(el("td",j===1?"":cls(v[0]),pc(v[0],!!v[1])))});tb.appendChild(tr)});
   var w=el("div");w.style.overflowX="auto";w.appendChild(tb);body.appendChild(w);
   body.appendChild(el("div","small",T.cond+" "+J.start.replace("-",".")+"~"+J.asof.slice(0,7).replace("-",".")+" · 상장폐지 포함 · 재무는 공시 다음 날부터 · 다음 날 시가 체결 · 수수료+세금+슬리피지 "+J.slip.toFixed(1)+"% 반영. 과거 성과이며 보장 아님."));
