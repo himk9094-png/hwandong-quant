@@ -182,10 +182,10 @@ var TABS=[
  {k:"total",l:"종합",d:"<b>밸류·퀄리티·모멘텀</b> 백분위 점수의 평균(0~100). 세 가지 모두 계산되는 종목만.",f:function(r){return nz(r.total)},s:sortBy("total"),c:[["종합","total","s"],["밸류","v","s"],["퀄리티","q","s"],["모멘텀","m","s"]]},
  {k:"hold",l:"보유",custom:"hold"},
  {k:"small",l:"팩터",custom:"small"},
- {k:"lmom",l:"대형 모멘텀",d:"코스피 <b>시총 상위 100</b> 중 12-1개월 수익률 순. 상위 10이 편입 대상. 백테스트: 11~4월 보유 시 20~23년 +10%/년, 23~26년 +37%/년.",f:function(r){return nz(r.lm)},s:sortBy("lm",true),rk:"lm",topN:10,c:[["12-1M","mom12","sp"],["6M","mom6","sp"],["52주고점","hi52","sp"],["시총","mcap","eok"]],season:true},
- {k:"lcombo",l:"대형 종합",d:"코스피 시총 상위 100 중 가치(PER·이익수익률)+질(ROA·ROE)+모멘텀(12-1·6-1개월) 평균 순. 상위 10 편입. 백테스트: 11~4월 보유 시 +9%/년, +36%/년.",f:function(r){return nz(r.lc)},s:sortBy("lc",true),rk:"lc",topN:10,c:[["PER","per","x"],["ROE","roe","p"],["12-1M","mom12","sp"],["시총","mcap","eok"]],season:true},
- {k:"lmf",l:"대형 마법공식",d:"코스피 시총 상위 100 중 이익수익률+ROA 순(흑자만). 상위 10 편입. 백테스트: 11~4월 보유 시 +5%/년, +25%/년 — 대형주에선 모멘텀보다 약함.",f:function(r){return nz(r.lf)},s:sortBy("lf",true),rk:"lf",topN:10,c:[["이익수익률","ey","p"],["ROA","roa","p"],["PER","per","x"],["시총","mcap","eok"]],season:true},
- {k:"size",l:"시총 상위",d:"코스피 시가총액 순. 상위 20 동일비중이 비교 기준. 백테스트: 11~4월 보유 시 +11%/년, +17%/년.",f:function(r){return nz(r.sz)},s:sortBy("sz",true),rk:"sz",topN:20,c:[["시총","mcap","eok"],["PER","per","x"],["12-1M","mom12","sp"],["종합","total","s"]],season:true},
+ {k:"lmom",l:"대형 모멘텀",d:"코스피 <b>시총 상위 100</b> 중 12-1개월 수익률 순. 상위 10이 편입 대상.",f:function(r){return nz(r.lm)},s:sortBy("lm",true),rk:"lm",topN:10,c:[["12-1M","mom12","sp"],["6M","mom6","sp"],["52주고점","hi52","sp"],["시총","mcap","eok"]],season:true},
+ {k:"lcombo",l:"대형 종합",d:"코스피 시총 상위 100 중 가치(PER·이익수익률)+질(ROA·ROE)+모멘텀(12-1·6-1개월) 평균 순. 상위 10 편입.",f:function(r){return nz(r.lc)},s:sortBy("lc",true),rk:"lc",topN:10,c:[["PER","per","x"],["ROE","roe","p"],["12-1M","mom12","sp"],["시총","mcap","eok"]],season:true},
+ {k:"lmf",l:"대형 마법공식",d:"코스피 시총 상위 100 중 이익수익률+ROA 순(흑자만). 상위 10 편입.",f:function(r){return nz(r.lf)},s:sortBy("lf",true),rk:"lf",topN:10,c:[["이익수익률","ey","p"],["ROA","roa","p"],["PER","per","x"],["시총","mcap","eok"]],season:true},
+ {k:"size",l:"시총 상위",d:"코스피 시가총액 순. 상위 20 동일비중이 비교 기준.",f:function(r){return nz(r.sz)},s:sortBy("sz",true),rk:"sz",topN:20,c:[["시총","mcap","eok"],["PER","per","x"],["12-1M","mom12","sp"],["종합","total","s"]],season:true},
  {k:"mf",l:"마법공식",d:"<b>이익수익률</b>(영업이익 ÷ (시총+부채총계)) 순위와 <b>자본수익률 ROC</b>(영업이익 ÷ 총자산) 순위의 합. 영업이익 적자 제외. 둘 다 근사식.",f:function(r){return nz(r.mf)},s:sortBy("mf",true),c:[["순위","mf","i"],["이익수익률","ey","p"],["ROC","roc","p"],["PER","per","x"]]},
  {k:"value",l:"밸류",d:"이익/시총·순자산/시총·매출/시총·이익수익률의 백분위 평균. 높을수록 싸다.",f:function(r){return nz(r.v)},s:sortBy("v"),c:[["점수","v","s"],["PER","per","x"],["PBR","pbr","x"],["PSR","psr","x"]]},
  {k:"quality",l:"퀄리티",d:"ROE·ROA·영업이익률이 높고 부채비율이 낮을수록 높은 점수.",f:function(r){return nz(r.q)},s:sortBy("q"),c:[["점수","q","s"],["ROE","roe","p"],["영업이익률","opm","p"],["부채비율","debt","p"]]},
@@ -225,6 +225,7 @@ function render(){
   ["#fMkt","#fCap","#fTv"].forEach(function(s){$(s).style.display=t.custom==="aplan"?"none":""});
   var d=el("p","desc");d.innerHTML=t.d||"";if(t.d)L.appendChild(d);
   if(t.season&&D){var mo=+D.meta.asof.slice(5,7),on=(mo>=11||mo<=4);var bn=el("div","banner",on?"지금은 보유 구간(11~4월)입니다. 백테스트 기준: 11월 초 매수 → 2월 초 교체 → 5월 초 매도.":"지금은 쉬는 구간(5~10월)입니다. 백테스트 기준 11월 초에 매수합니다.");bn.style.margin="0 0 10px";L.appendChild(bn)}
+  if(!t.custom&&window.TP)window.TP.mount(L,t.k);
   if(t.custom==="aplan")return renderA(L,t);
   if(t.custom==="hold")return window.HD?window.HD.render(L):L.appendChild(el("div","empty","불러오는 중…"));
   if(t.custom==="pf")return window.PF?window.PF.render(L):L.appendChild(el("div","empty","불러오는 중…"));
@@ -353,6 +354,7 @@ else fetch("data/latest.json?t="+Date.now()).then(function(r){if(!r.ok)throw new
 <script src="pf.js"></script>
 <script src="hold.js"></script>
 <script src="smallcap.js"></script>
+<script src="tabperf.js"></script>
 <script src="coin-engine.js"></script>
 <script src="coin.js"></script>
 </body>

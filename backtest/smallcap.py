@@ -32,6 +32,10 @@ COMM = 0.00015
 SLIP = 0.0025                     # 편도 슬리피지(소형주 호가 차이·충격)
 MIN_VAL = 1e8                     # 20일 평균 거래대금 1억 원 이상만
 SMALL_Q = 0.20
+MIN_CAP = 0.0                 # 시총 최소(원). 앱 목록 탭과 같게 하려면 300억
+TOPK = 0                      # >0 이면 시총 상위 TOPK 종목만(대형주 탭: 코스피 상위 100)
+KOSPI_ONLY = False
+SEASON = False                # True 면 5~10월은 현금(11월 매수 → 2월 교체 → 5월 매도)
 CAP_LO = 0.0                  # 시총 하위 CAP_LO ~ SMALL_Q 구간만(0, 0.2 = 소형주 / 0.8, 1.0 = 대형주)
 START = "20160401"
 EXCL_NAME = r"스팩|리츠|REIT|인프라|선박|기업인수목적|ETN|ETF|유전|\d+호|맥쿼리|투자회사"   # 펀드·투자회사형 종목
@@ -69,6 +73,7 @@ def load():
     mcap, val, shares = piv("mcap").astype("float64"), piv("val").astype("float64"), piv("shares").astype("float64")
     last = px.drop_duplicates("code", keep="last").set_index("code")
     sect = piv("sect") if "sect" in px else None
+    kospi = (piv("mkt") == "P") if "mkt" in px else pd.DataFrame(True, index=dates, columns=codes)
     # 일간 수익률(권리락·액면분할 반영: 등락률은 조정 기준가 대비)
     ret = (chg / 100.0)
     base = close / (1 + ret)
@@ -82,7 +87,7 @@ def load():
     okname = ~last.reindex(codes)["name"].astype(str).str.contains(EXCL_NAME, regex=True).values
     m = dict(dates=dates, codes=codes, close=close, open=opn, ret=ret.fillna(0.0), gap=gap, intra=intra, mcap=mcap,
              val20=val.rolling(20, min_periods=10).mean(), shares=shares, alive=alive, flags=flags,
-             static_ok=pd.Series(common & okname, index=codes), names=last.reindex(codes)["name"])
+             static_ok=pd.Series(common & okname, index=codes), names=last.reindex(codes)["name"], kospi=kospi)
     return m
 
 
@@ -208,21 +213,34 @@ def factors(m, F, j: int, trade_ok=None, risk=None):
         ok &= trade_ok                             # 리밸런싱 날 거래되는 종목만(정지 제외)
     if risk and "risk" in m:
         ok &= ~m["risk"].iloc[j]
+    if MIN_CAP > 0:
+        ok &= mc >= MIN_CAP
+    if KOSPI_ONLY:
+        ok &= m["kospi"].iloc[j]
     mc = mc[ok]
     if len(mc) < 50:
         return None
-    small = mc[(mc <= mc.quantile(SMALL_Q)) & ((mc > mc.quantile(CAP_LO)) if CAP_LO > 0 else True)].index
+    if TOPK:
+        small = mc.nlargest(TOPK).index
+    else:
+        small = mc[(mc <= mc.quantile(SMALL_Q)) & ((mc > mc.quantile(CAP_LO)) if CAP_LO > 0 else True)].index
     g = lambda k: F[k].iloc[j].reindex(small)
     cap = mc.reindex(small)
-    eq, ni, rev, cfo, gp, assets = g("equity"), g("ni"), g("rev"), g("cfo"), g("gp"), g("assets")
+    eq, ni, rev, cfo, gp, assets, op = g("equity"), g("ni"), g("rev"), g("cfo"), g("gp"), g("assets"), g("op")
     # 재무 단위 오류 방지: 자본·자산이 시총의 50배를 넘거나 자본 > 자산이면 버림
     bad = (eq > cap * 50) | (assets > cap * 200) | (eq > assets * 1.01)
-    eq, ni, rev, cfo, gp, assets = (x.where(~bad) for x in (eq, ni, rev, cfo, gp, assets))
+    eq, ni, rev, cfo, gp, assets, op = (x.where(~bad) for x in (eq, ni, rev, cfo, gp, assets, op))
     sh, sh1 = m["shares"].iloc[j].reindex(small), m["shares"].iloc[max(0, j - 250)].reindex(small)
     if "cumidx" not in m:
         m["cumidx"] = (1 + m["ret"]).cumprod()
     cum = m["cumidx"]
+    cj = lambda a: cum.iloc[max(0, j - a)].reindex(small)
+    liab = (assets - eq).clip(lower=0)
     return pd.DataFrame({
+        "op": op, "rev": rev, "liab": liab,
+        "ey": op / (cap + liab), "roc": (op / assets).where(assets > 0), "roe": (ni / eq).where(eq > 0),
+        "roa": (ni / assets).where(assets > 0), "opm": (op / rev).where(rev > 0), "debt": (liab / eq).where(eq > 0),
+        "mom12_1": cj(21) / cj(252) - 1, "mom6_1": cj(21) / cj(126) - 1, "mom3": cum.iloc[j].reindex(small) / cj(63) - 1,
         "cap": cap, "eq": eq, "ni": ni, "cfo": cfo,
         "pbr": (cap / eq).where(eq > 0), "per": (cap / ni).where(ni > 0), "psr": (cap / rev).where(rev > 0),
         "pcr": (cap / cfo).where(cfo > 0), "gpa": (gp / assets).where(assets > 0),
@@ -239,6 +257,8 @@ def score(X: pd.DataFrame, strat: int) -> pd.Series:
         return rank(cap).where((ni > 0) & (eq > 0))
     if strat == 11:                                          # 저PBR + 흑자(최근 4분기 순이익 > 0)
         return rank(pbr).where(ni > 0)
+    if 21 <= strat <= 30:
+        return app_score(X, strat)
     if strat == 13:                                          # 책의 신F-스코어: PBR 하위 20% 중 F 3점, PBR 낮은 순
         return rank(pbr).where((fscore == 3) & cfo.notna() & (pbr <= pbr.quantile(0.2)))
     if strat == 0:
@@ -261,15 +281,58 @@ def score(X: pd.DataFrame, strat: int) -> pd.Series:
     raise ValueError(strat)
 
 
+def _pr(x, hi=True):
+    return x.rank(pct=True, ascending=hi) * 100
+
+
+def app_score(X: pd.DataFrame, strat: int) -> pd.Series:
+    """앱 목록 탭(pipeline/factors.py)과 같은 정의. 낮을수록 좋은 점수."""
+    cap = X["cap"]
+    ep, bp, sp = X["ni"] / cap, X["eq"].where(X["eq"] > 0) / cap, X["rev"].where(X["rev"] > 0) / cap
+    vp = pd.concat([_pr(ep), _pr(bp), _pr(sp), _pr(X["ey"])], axis=1)
+    v = vp.mean(axis=1).where(vp.notna().sum(axis=1) >= 3)
+    qp = pd.concat([_pr(X["roe"]), _pr(X["roa"]), _pr(X["opm"]), _pr(X["debt"], False)], axis=1)
+    q = qp.mean(axis=1).where(qp.notna().sum(axis=1) >= 3)
+    mp = pd.concat([_pr(X["mom12_1"]), _pr(X["mom6_1"]), _pr(X["mom3"])], axis=1)
+    mo = mp.mean(axis=1).where(mp.notna().sum(axis=1) >= 2)
+    if strat == 21:                                          # 종합
+        return -pd.concat([v, q, mo], axis=1).mean(axis=1).where(v.notna() & q.notna() & mo.notna())
+    if strat == 22:
+        return -v
+    if strat == 23:
+        return -q
+    if strat == 24:
+        return -mo
+    if strat == 25:                                          # 마법공식: 이익수익률 + 자본수익률
+        ok = (X["op"] > 0) & X["ey"].notna() & (X["roc"] > 0)
+        return (X["ey"].where(ok).rank(ascending=False) + X["roc"].where(ok).rank(ascending=False))
+    if strat == 26:                                          # 대형 모멘텀: 12-1개월
+        return -X["mom12_1"]
+    if strat == 27:                                          # 대형 종합: 가치(PER·이익수익률)+질(ROA·ROE)+모멘텀(12-1·6-1)
+        p = pd.concat([_pr(ep.where(X["ni"] > 0)), _pr(X["ey"]), _pr(X["roa"]), _pr(X["roe"]), _pr(X["mom12_1"]), _pr(X["mom6_1"])], axis=1)
+        return -p.mean(axis=1).where(p.notna().sum(axis=1) >= 4)
+    if strat == 28:                                          # 대형 마법공식: 이익수익률 + ROA(흑자만)
+        ok = (X["ni"] > 0) & X["ey"].notna() & X["roa"].notna()
+        return X["ey"].where(ok).rank(ascending=False) + X["roa"].where(ok).rank(ascending=False)
+    if strat == 29:                                          # 시총 상위
+        return -cap
+    if strat == 30:                                          # 동일비중 전체(비교 기준)
+        return pd.Series(0.0, index=X.index)
+    raise ValueError(strat)
+
+
 def picks(m, F, i: int, strat: int, n: int):
     """i번째 날의 '전 거래일 종가' 기준 종목 선택."""
+    if SEASON and "05" <= m["dates"][i][4:6] <= "10":
+        return []                                            # 쉬는 구간: 현금
     X = factors(m, F, i - 1, trade_ok=m["alive"].iloc[i])
     if X is None:
         return []
     return list(score(X, strat).dropna().sort_values().index[:n])
 
 
-NAMES = {13: "저PBR20%+F3(책)", 0: "초소형주(시총 하위)", 12: "초소형주+흑자", 11: "저PBR+흑자", 1: "소형주 저PBR", 2: "파마+LSV 콤보", 3: "슈퍼가치", 4: "신마법공식 2.0", 5: "F-스코어", 6: "슈퍼퀄리티", 7: "짬뽕"}
+NAMES = {21: "종합", 22: "밸류", 23: "퀄리티", 24: "모멘텀", 25: "마법공식", 26: "대형 모멘텀", 27: "대형 종합",
+         28: "대형 마법공식", 29: "시총 상위", 30: "전체 동일비중", 13: "저PBR20%+F3(책)", 0: "초소형주(시총 하위)", 12: "초소형주+흑자", 11: "저PBR+흑자", 1: "소형주 저PBR", 2: "파마+LSV 콤보", 3: "슈퍼가치", 4: "신마법공식 2.0", 5: "F-스코어", 6: "슈퍼퀄리티", 7: "짬뽕"}
 NEEDS_FULL = {2, 3, 5, 6, 7}           # 영업현금흐름 필요
 NEEDS_GP = {4, 6, 7}
 
@@ -289,6 +352,8 @@ def reb_days(dates, freq):
             key = (y, mo)
         elif freq == "Q":
             key = (y, mo) if mo in ("04", "06", "09", "12") else prev
+        elif freq == "S":                                   # 계절성: 11월 매수, 2월 교체, 5월 매도
+            key = (y, mo) if mo in ("11", "02", "05") else prev
         elif freq == "J":                                   # 연 1회 7월(강환국 책 방식)
             key = (y, mo) if mo == "07" else prev
         elif freq == "Y":
