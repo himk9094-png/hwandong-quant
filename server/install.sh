@@ -132,6 +132,59 @@ __PY__
   cd /; rm -rf "$W"
 }
 
+# DART bulk financial statements (BS/PL/CF zips, 2015~) -> GitHub release "dart-bulk" assets.
+# Runs in the background (survives closing this window). Progress: hq log / result: server branch.
+cmd_dartbulk() {
+  systemctl reset-failed hq-dartbulk 2>/dev/null
+  systemd-run --unit hq-dartbulk --collect /usr/local/bin/hq _dartbulk >/dev/null && \
+    echo "Started in background. You can close this window. (progress: journalctl -u hq-dartbulk -f)"
+}
+_dartbulk() {
+  local W=$D/dart M=https://opendart.fss.or.kr/disclosureinfo/fnltt/dwld/main.do
+  local L=https://opendart.fss.or.kr/disclosureinfo/fnltt/dwld/list.do U=https://opendart.fss.or.kr
+  local UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
+  mkdir -p "$W"; cd "$W" || return 1; rm -f jar
+  local log=$W/report.txt; : > "$log"
+  say() { echo "$*" | tee -a "$log"; }
+  say "dartbulk $(date '+%F %T %Z')"
+  curl -sS -m 60 -A "$UA" -b jar -c jar -o main.html "$M"
+  curl -sS -m 60 -A "$UA" -b jar -c jar -e "$M" -o list.html "$L"
+  local names; names=$(grep -oE "[0-9]{4}_[0-9]Q_(BS|PL|CF)_[0-9]+\.zip" list.html | sort -u)
+  say "files on DART (BS/PL/CF): $(echo "$names" | grep -c zip)"
+  # release
+  local out code rid
+  out=$(gh GET "$API/releases/tags/dart-bulk"); code=${out##*$'\n'}
+  if [ "$code" != 200 ]; then
+    out=$(gh POST "$API/releases" '{"tag_name":"dart-bulk","target_commitish":"main","name":"DART bulk financial statements","body":"opendart 재무정보 일괄다운로드 원본(BS/PL/CF). 서버(hq dartbulk)가 올림.","prerelease":true}')
+    code=${out##*$'\n'}
+  fi
+  rid=$(echo "$out" | head -n -1 | python3 -c 'import json,sys;print(json.load(sys.stdin).get("id",""))')
+  [ -z "$rid" ] && { say "release failed: HTTP $code (token needs Contents: Read and write)"; report dartbulk.txt "$log"; return 1; }
+  local have="" p=1 page
+  while :; do
+    page=$(gh GET "$API/releases/$rid/assets?per_page=100&page=$p" | head -n -1 | python3 -c 'import json,sys;print("\n".join(a["name"] for a in json.load(sys.stdin)))')
+    [ -z "$page" ] && break; have="$have"$'\n'"$page"; p=$((p+1))
+  done
+  local n_ok=0 n_skip=0 n_bad=0 f sz
+  for f in $names; do
+    if echo "$have" | grep -qx "$f"; then n_skip=$((n_skip+1)); continue; fi
+    curl -sS -m 900 -A "$UA" -b jar -c jar -e "$M" -o "$f" "$U/cmm/downloadFnlttZip.do?fl_nm=$f"
+    if ! head -c 2 "$f" | grep -q PK; then
+      say "bad download $f: $(head -c 120 "$f" | tr -d '\r\n')"; n_bad=$((n_bad+1)); rm -f "$f"
+      [ $n_bad -ge 3 ] && [ $n_ok -eq 0 ] && { say "stopping: downloads keep failing"; break; }
+      curl -sS -m 60 -A "$UA" -b jar -c jar -o main.html "$M"; sleep 5; continue
+    fi
+    sz=$(wc -c < "$f")
+    code=$(curl -sS -m 1800 -o /dev/null -w '%{http_code}' -X POST -A "$UA" -H "Authorization: Bearer $(tok)" \
+           -H "Content-Type: application/zip" --data-binary @"$f" \
+           "https://uploads.github.com/repos/$REPO/releases/$rid/assets?name=$f")
+    if [ "$code" = 201 ]; then n_ok=$((n_ok+1)); echo "$(date +%T) up $f $sz"; else say "upload $f failed: HTTP $code"; n_bad=$((n_bad+1)); fi
+    rm -f "$f"; sleep 1
+  done
+  say "done $(date '+%F %T'): uploaded $n_ok, already there $n_skip, failed $n_bad"
+  report dartbulk.txt "$log"
+}
+
 report() {  # report NAME FILE -> branch 'server' (needs Contents: Read and write)
   local name=$1 file=$2 out code sha b64 body
   [ -s "$D/token" ] || { echo "(no token: report not uploaded)"; return 0; }
@@ -158,8 +211,10 @@ case ${1:-status} in
   status) cmd_status;;
   log) shift; cmd_log "$@";;
   darttest) cmd_darttest;;
+  dartbulk) cmd_dartbulk;;
+  _dartbulk) _dartbulk;;
   update) curl -fsSL "https://raw.githubusercontent.com/$REPO/main/server/install.sh?t=$(date +%s)" -o /tmp/hq.sh && bash /tmp/hq.sh;;
-  *) echo "hq status | check | token | run daily|coin|collect | log | darttest | update";;
+  *) echo "hq status | check | token | run daily|coin|collect | log | darttest | dartbulk | update";;
 esac
 __HQ__
 chmod 755 /usr/local/bin/hq
@@ -205,5 +260,5 @@ cat <<'__MSG__'
 Done. Commands:
   hq status      timers + recent runs       hq check     token + timers
   hq token       paste a new token          hq run daily start daily now (test)
-  hq darttest    test DART bulk download from this Seoul server
+  hq dartbulk    DART bulk financial files -> GitHub (background, ~20 min)
 __MSG__
