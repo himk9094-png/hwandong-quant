@@ -89,34 +89,46 @@ cmd_log() { journalctl -u 'hq@*' -n "${1:-40}" --no-pager; }
 # Result is saved to the 'server' branch so it can be read without screenshots.
 cmd_darttest() {
   local W; W=$(mktemp -d); cd "$W" || return 1
-  local U=https://opendart.fss.or.kr
+  local U=https://opendart.fss.or.kr L=https://opendart.fss.or.kr/disclosureinfo/fnltt/dwld/list.do
+  local C="curl -sS -m 120 -A Mozilla/5.0 -b jar -c jar -e $L"
   {
-    echo "darttest $(date '+%F %T %Z') ip=$(curl -s -m 10 https://checkip.amazonaws.com)"
-    code=$(curl -sS -m 40 -A "Mozilla/5.0" -o list.html -w '%{http_code}' "$U/disclosureinfo/fnltt/dwld/list.do")
-    echo "list page: HTTP $code, $(wc -c < list.html) bytes, title: $(grep -o '<title>[^<]*' list.html | head -1)"
-    echo "zip names found: $(grep -oE "[A-Za-z0-9_.-]+\.zip" list.html | sort -u | wc -l)"
-    grep -oE "[A-Za-z0-9_.-]+\.zip" list.html | sort -u | head -5
-    echo "--- download calls in page:"
-    grep -oE "download[A-Za-z]*\([^)]*\)|downloadFnlttZip[^\"' ]*" list.html | sort -u | head -8
-    f=$(grep -oE "[A-Za-z0-9_.-]+\.zip" list.html | sort -u | head -1)
-    if [ -n "$f" ]; then
-      code=$(curl -sS -m 120 -A "Mozilla/5.0" -e "$U/disclosureinfo/fnltt/dwld/list.do" -o one.bin -w '%{http_code} %{content_type}' "$U/cmm/downloadFnlttZip.do?fl_nm=$f")
-      echo "download $f: $code, $(wc -c < one.bin) bytes, type: $(file -b one.bin 2>/dev/null | head -c 80)"
-      python3 - <<'__PY__' 2>&1 | head -12
-import zipfile
-try:
-    z = zipfile.ZipFile("one.bin")
-    for i in z.infolist()[:6]: print("  in zip:", i.filename, i.file_size)
-    n = z.infolist()[0]; head = z.open(n).read(600)
-    for enc in ("cp949", "utf-8"):
-        try: print("  first lines:", head.decode(enc)[:400].replace("\t", " | ")); break
-        except Exception: pass
-except Exception as e:
-    print("  not a zip:", e, open("one.bin", "rb").read(300))
+    echo "darttest v2 $(date '+%F %T %Z') ip=$(curl -s -m 10 https://checkip.amazonaws.com)"
+    code=$($C -o list.html -w '%{http_code}' "$L")
+    echo "list page: HTTP $code, $(wc -c < list.html) bytes, zips: $(grep -oE "[A-Za-z0-9_.-]+\.zip" list.html | sort -u | wc -l)"
+    f=$(grep -oE "[0-9]{4}_[0-9]Q_BS_[0-9]+\.zip" list.html | sort -u | tail -1)
+    echo "test file: $f"
+    echo "--- page lines around first zip:"
+    grep -n -m3 -B2 -A2 "\.zip" list.html | cut -c1-300
+    echo "--- forms / scripts mentioning download:"
+    grep -n -iE "<form|download|fl_nm|\.do" list.html | cut -c1-250 | head -25
+    try() {  # try NAME curl-args...
+      local n=$1; shift
+      code=$($C -o "$n.bin" -w '%{http_code} %{content_type}' "$@")
+      sz=$(wc -c < "$n.bin")
+      if head -c 2 "$n.bin" | grep -q PK; then echo "[$n] OK ZIP $code $sz bytes"; return 0; fi
+      echo "[$n] no: $code $sz bytes: $(tr -d '\r' < "$n.bin" | sed 's/<[^>]*>//g' | tr -s ' \n' ' ' | cut -c1-200)"
+      return 1
+    }
+    try get   "$U/cmm/downloadFnlttZip.do?fl_nm=$f" || \
+    try post  -X POST --data "fl_nm=$f" "$U/cmm/downloadFnlttZip.do" || \
+    try post2 -X POST --data "fl_nm=$f&mode=" "$U/disclosureinfo/fnltt/dwld/download.do" || true
+    for n in get post post2; do
+      if [ -f "$n.bin" ] && head -c 2 "$n.bin" | grep -q PK; then
+        python3 - "$n.bin" <<'__PY__' 2>&1 | head -12
+import sys, zipfile
+z = zipfile.ZipFile(sys.argv[1])
+for i in z.infolist()[:4]: print("  in zip:", i.filename, i.file_size)
+head = z.open(z.infolist()[0]).read(700)
+for enc in ("cp949", "utf-8"):
+    try: print("  first lines:", head.decode(enc)[:500].replace("\t", " | ")); break
+    except Exception: pass
 __PY__
-    fi
+        break
+      fi
+    done
   } 2>&1 | tee report.txt
   report "darttest.txt" report.txt
+  report "dart_list.html" list.html >/dev/null
   cd /; rm -rf "$W"
 }
 
@@ -146,7 +158,8 @@ case ${1:-status} in
   status) cmd_status;;
   log) shift; cmd_log "$@";;
   darttest) cmd_darttest;;
-  *) echo "hq status | check | token | run daily|coin|collect | log | darttest";;
+  update) curl -fsSL "https://raw.githubusercontent.com/$REPO/main/server/install.sh?t=$(date +%s)" -o /tmp/hq.sh && bash /tmp/hq.sh;;
+  *) echo "hq status | check | token | run daily|coin|collect | log | darttest | update";;
 esac
 __HQ__
 chmod 755 /usr/local/bin/hq
