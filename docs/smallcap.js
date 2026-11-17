@@ -3,13 +3,14 @@
 "use strict";
 var X=window.HQ,el=X.el,num=X.num,cls=X.cls;
 var KEY="hq_small_v1",J=null,loading=false,err=false;
-var st={f:"Q",n:20,r:1,s:3,v:"now"};
+var st={b:"S",f:"Q",n:20,r:1,s:3,v:"now"};
 try{var sv=JSON.parse(localStorage.getItem(KEY)||"null");if(sv)Object.keys(st).forEach(function(k){if(sv[k]!=null)st[k]=sv[k]})}catch(e){}
 function keep(){try{localStorage.setItem(KEY,JSON.stringify(st))}catch(e){}}
 var FQ={Q:"분기",M:"매월",W:"매주"};
 function pc(v,sign){return v==null?"–":(sign&&v>0?"+":"")+v.toFixed(1)+"%"}
-function row(s,f,n,r){for(var i=0;i<J.grid.length;i++){var g=J.grid[i];if(g.s===s&&g.f===f&&g.n===n&&g.r===r)return g}return null}
-function nm(s){return J.names[String(s)]||String(s)}
+function row(s,f,n,r,b){b=b||st.b;for(var i=0;i<J.grid.length;i++){var g=J.grid[i];if((g.b||"S")===b&&g.s===s&&g.f===f&&g.n===n&&g.r===r)return g}return null}
+function nm(s){var x=J.names[String(s)]||String(s);return st.b==="S"?x:x.replace(/^소형주 /,"")}
+function band(){var B=J.bands||[{k:"S",l:"소형주",d:"시가총액 하위 0~20%"}];for(var i=0;i<B.length;i++)if(B[i].k===st.b)return B[i];return B[0]}
 function seg(label,opts,key){
   var w=el("div","pff");w.appendChild(el("span",null,label));var b=el("div","pfbar");b.style.margin="0";
   opts.forEach(function(o){var t=el("button","tgl"+(st[key]===o[0]?" on":""),o[1]);t.type="button";t.setAttribute("aria-pressed",st[key]===o[0]);t.onclick=function(){st[key]=o[0];keep();X.render()};b.appendChild(t)});
@@ -73,16 +74,19 @@ function card(c,i,o,snap){
 
 // ---------------------------------------------------------------- 화면
 function draw(L){
-  var ord=J.order,s=st.s;if(ord.indexOf(s)<0)s=st.s=3;
-  var d=el("p","desc");
-  d.innerHTML="거래 가능한 보통주 중 <b>시가총액 하위 20%</b>에서 고르는 강환국식 전략. "+J.start.slice(0,7).replace("-",".")+"~"+J.asof.slice(0,7).replace("-",".")+" 백테스트 · <b>상장폐지 종목 포함</b> · 재무는 공시 다음 날부터 · 전날 종가 신호 → 다음 날 시가 체결 · 수수료+매도세+슬리피지 "+J.slip.toFixed(1)+"% 반영 · 20일 평균 거래대금 "+J.min_val+"억↑. 데이터 "+J.asof+".";
+  if(J.bands&&!J.bands.some(function(x){return x.k===st.b}))st.b="S";
+  if(st.b!=="S"&&st.f==="W")st.f="Q";
+  var ord=J.order,s=st.s;if(ord.indexOf(s)<0||!row(s,st.f,st.n,st.r))s=st.s=3;
+  var BD=band(),d=el("p","desc");
+  d.innerHTML="거래 가능한 보통주 중 <b>"+BD.l+"("+BD.d+")</b>에서 고르는 강환국식 팩터 전략. "+(st.b==="S"?"":"<b>강환국 원래 전략은 소형주용</b>이고, 이 구간은 같은 규칙을 적용해 본 비교용입니다. ")+J.start.slice(0,7).replace("-",".")+"~"+J.asof.slice(0,7).replace("-",".")+" 백테스트 · <b>상장폐지 종목 포함</b> · 재무는 공시 다음 날부터 · 전날 종가 신호 → 다음 날 시가 체결 · 수수료+매도세+슬리피지 "+J.slip.toFixed(1)+"% 반영 · 20일 평균 거래대금 "+J.min_val+"억↑. 데이터 "+J.asof+".";
   L.appendChild(d);
-  L.appendChild(seg("리밸런싱",[["Q","분기"],["M","매월"],["W","매주"]],"f"));
+  if(J.bands)L.appendChild(seg("대상",J.bands.map(function(x){return [x.k,x.l]}),"b"));
+  L.appendChild(seg("리밸런싱",st.b==="S"?[["Q","분기"],["M","매월"],["W","매주"]]:[["Q","분기"],["M","매월"]],"f"));
   L.appendChild(seg("종목 수",[[10,"10"],[20,"20"],[30,"30"]],"n"));
   L.appendChild(seg("🟡 희석 공시 종목",[[1,"빼기"],[0,"포함"]],"r"));
 
   // 성과 표
-  L.appendChild(el("div","sec","전략별 성과 · "+FQ[st.f]+" "+st.n+"종목 · 🟡"+(st.r?"빼기":"포함")));
+  L.appendChild(el("div","sec",BD.l+" 전략별 성과 · "+FQ[st.f]+" "+st.n+"종목 · 🟡"+(st.r?"빼기":"포함")));
   var rows=ord.map(function(k){var g=row(k,st.f,st.n,st.r);if(!g)return null;var y=g.y||{};
     return {key:k,on:k===s,bold:k===99,cells:[nm(k),pc(g.cagr),pc(g.mdd),pc(y["2026"],true),pc(y["2025"],true),pc(g.cost)],cls:{1:cls(g.cagr),3:cls(y["2026"]),4:cls(y["2025"])}}}).filter(Boolean);
   L.appendChild(table(["전략","연수익","최대낙폭","26년","25년","비용/년"],rows,function(k){st.s=k;keep();X.render()}));
@@ -105,7 +109,7 @@ function draw(L){
     L.appendChild(el("div","small","2016년은 4월부터, "+J.asof.slice(0,4)+"년은 "+J.asof.slice(5).replace("-","/")+"까지."));
     // 리밸런싱 빈도 × 🟡
     L.appendChild(el("div","sec","리밸런싱 빈도 · 🟡 빼기 효과 ("+nm(s)+", "+st.n+"종목)"));
-    L.appendChild(table(["빈도","🟡 포함","🟡 빼기","비용/년"],["Q","M","W"].map(function(f){var a0=row(s,f,st.n,0),a1=row(s,f,st.n,1);
+    L.appendChild(table(["빈도","🟡 포함","🟡 빼기","비용/년"],(st.b==="S"?["Q","M","W"]:["Q","M"]).map(function(f){var a0=row(s,f,st.n,0),a1=row(s,f,st.n,1);
       return {on:f===st.f,cells:[FQ[f],a0?pc(a0.cagr)+" · "+pc(a0.mdd):"–",a1?pc(a1.cagr)+" · "+pc(a1.mdd):"–",a1?pc(a1.cost):"–"],cls:{}}})));
     L.appendChild(el("div","small","칸 = 연수익 · 최대낙폭. 자주 바꿀수록 비용이 커집니다."));
   }
@@ -115,7 +119,7 @@ function draw(L){
   var Q=J.q,N=J.now;
   L.appendChild(el("div","sec","종목 · "+nm(s)+" 상위 "+st.n+(st.r?" (🟡 뺌)":"")));
   L.appendChild(seg("보기",[["now","다음 교체 후보"],["q","지금 보유("+Q.date.slice(5).replace("-","/")+" 편입)"]],"v"));
-  var S=st.v==="q"?Q:N,list=((S.lists[String(s)]||{})[String(st.r)]||[]).slice(0,st.n);
+  var S=st.v==="q"?Q:N,LB=S.lists[st.b]||(st.b==="S"&&S.lists["3"]?S.lists:{}),list=((LB[String(s)]||{})[String(st.r)]||[]).slice(0,st.n);
   var info=el("p","desc");
   if(st.v==="q"){info.innerHTML="분기 리밸런싱("+Q.date+" 시가)에 산 종목 · 신호 "+Q.sig+" 종가 · "+Q.basis+" 반영. 오른쪽 % = 편입일 시가 → "+J.asof+" 종가."}
   else{
@@ -131,7 +135,8 @@ function draw(L){
   // 주의
   L.appendChild(el("div","sec","주의"));
   ["과거 성과이며 미래 수익을 보장하지 않습니다. 모든 전략의 최대낙폭이 −45~−70%이고, "+J.asof.slice(0,4)+"년은 거의 모든 설정이 손실입니다.",
-   "강환국 블로그의 연 15~19%는 그대로 재현되지 않았습니다(저PBR 단독은 연 5~10%). 데이터·기간·비용 가정 차이로 봅니다.",
+   "강환국 책의 연 37~40%는 2004~2016년 결과입니다. 같은 규칙을 2016년 이후에 돌리면 크게 낮아지며, 책 방식(연 1회 7월)은 이 기간에 분기보다 못했습니다.",
+   "중소형·중대형·대형·전체 구간은 같은 규칙을 적용해 본 것입니다. 2016년 이후로는 소형주 밖에서 연 −7~+9%에 그쳤습니다.",
    "초소형주(시총 하위)의 매월·매주 수익(연 30~50%)은 호가가 얇은 종목이라 실제 체결가와 차이가 클 수 있어 비교용으로만 두었습니다.",
    "7전략 동일비중 = 처음에 7등분하고 서로 재조정하지 않음. 수익률 높은 전략에 더 싣는 방식은 결과를 보고 고르는 것이라 뺐습니다.",
    "🟡 = 최근 1년 안에 유상증자·전환사채·신주인수권부사채·교환사채·감자 결정 공시. 🔴(횡령·불성실공시·감사의견·거래정지)는 공시 수집이 끝나면 추가합니다.",

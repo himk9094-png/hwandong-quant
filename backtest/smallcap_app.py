@@ -63,52 +63,66 @@ def risk_events() -> pd.DataFrame:
     return b.sort_values("date")
 
 
-def run_grid(m, F):
+BANDS = [("S", "소형주", 0.0, 0.2), ("MS", "중소형주", 0.2, 0.5), ("ML", "중대형주", 0.5, 0.8), ("L", "대형주", 0.8, 1.0), ("A", "전체", 0.0, 1.0)]
+
+
+def band_cfg(b: str):
+    _, _, lo, hi = next(x for x in BANDS if x[0] == b)
+    S.CAP_LO, S.SMALL_Q = lo, hi
+    strats = ORDER if b == "S" else COMBO          # 초소형 비교군(0·12)은 소형주에서만 의미 있음
+    freqs = FREQS if b == "S" else ["Q", "M"]      # 매주는 소형주만(나머지 구간은 시간 대비 쓸모 적음)
+    return strats, freqs
+
+
+def run_grid(m, F, b: str):
+    strats, freqs = band_cfg(b)
     rows, curves = [], {}
-    for s in ORDER:
-        for f in FREQS:
+    for s in strats:
+        for f in freqs:
             for n in NS:
                 for rk in RISKS:
                     S.RISK_FILTER = bool(rk)
                     r = S.simulate(m, F, s, f, n)
                     e = r.pop("curve")
                     curves[(s, f, n, rk)] = e
-                    rows.append({"s": s, "f": f, "n": n, "r": rk, "cagr": r1(r["cagr"] * 100), "mdd": r1(r["mdd"] * 100, 0),
-                                 "to": r1(r["turnover"]), "cost": r1(r["cost"] * 100), "hold": r1(r["hold"]), "y": r["yearly"]})
-                    log(f"{S.NAMES[s]:10s} {f} {n:2d} {'🟡제외' if rk else '      '}: 연 {r['cagr']*100:5.1f}% 낙폭 {r['mdd']*100:4.0f}% · 26년 {r['yearly'].get('2026', 0):+.0f}%")
+                    rows.append({"b": b, "s": s, "f": f, "n": n, "r": rk, "cagr": r1(r["cagr"] * 100), "mdd": r1(r["mdd"] * 100, 0),
+                                 "to": r1(r["turnover"]), "cost": r1(r["cost"] * 100), "hold": r1(r["hold"]), "y": r["yearly"], "_e": e})
+                    log(f"[{b}] {S.NAMES[s]:10s} {f} {n:2d} {'🟡제외' if rk else '      '}: 연 {r['cagr']*100:5.1f}% 낙폭 {r['mdd']*100:4.0f}% · 26년 {r['yearly'].get('2026', 0):+.0f}%")
     S.RISK_FILTER = False
     # 7전략 동일비중: 처음에 7등분해서 각자 굴림(전략 사이 재조정 없음) → 곡선 평균
-    for f in FREQS:
+    for f in freqs:
         for n in NS:
             for rk in RISKS:
-                es = [curves[(s, f, n, rk)] for s in COMBO]
-                e = pd.concat(es, axis=1).ffill().mean(axis=1)
+                e = pd.concat([curves[(s, f, n, rk)] for s in COMBO], axis=1).ffill().mean(axis=1)
                 yrs = (e.index[-1] - e.index[0]).days / 365.25
                 ye = e.resample("YE").last()
                 yearly = ye.pct_change()
                 yearly.iloc[0] = ye.iloc[0] - 1
                 sub = [x for x in rows if x["f"] == f and x["n"] == n and x["r"] == rk and x["s"] in COMBO]
-                rows.append({"s": 99, "f": f, "n": n, "r": rk, "cagr": r1((e.iloc[-1] ** (1 / yrs) - 1) * 100),
+                rows.append({"b": b, "s": 99, "f": f, "n": n, "r": rk, "cagr": r1((e.iloc[-1] ** (1 / yrs) - 1) * 100),
                              "mdd": r1((e / e.cummax() - 1).min() * 100, 0), "to": r1(np.mean([x["to"] for x in sub])),
                              "cost": r1(np.mean([x["cost"] for x in sub])), "hold": None,
-                             "y": {str(k.year): round(float(v) * 100, 1) for k, v in yearly.items()}})
-                curves[(99, f, n, rk)] = e
-    months = sorted({k.strftime("%Y-%m") for e in curves.values() for k in e.resample("ME").last().index})
+                             "y": {str(k.year): round(float(v) * 100, 1) for k, v in yearly.items()}, "_e": e})
+    band_cfg("S")
+    return rows
+
+
+def finish(rows):
+    months = sorted({k.strftime("%Y-%m") for r in rows for k in r["_e"].resample("ME").last().index})
     for row in rows:
-        e = curves[(row["s"], row["f"], row["n"], row["r"])]
-        mon = e.resample("ME").last()
+        mon = row.pop("_e").resample("ME").last()
         mon.index = mon.index.strftime("%Y-%m")
         row["c"] = [None if pd.isna(v) else round(float(v), 3) for v in mon.reindex(months).values]
-    return rows, months
+    return months
 
 
-def snapshot(m, F, j: int, trade_i: int | None, ev: pd.DataFrame, last: int):
+def snapshot(m, F, j: int, trade_i: int | None, ev: pd.DataFrame, last: int, strats=ORDER):
     """j일 종가 기준 전략별 상위 종목(🟡 포함/제외 둘 다)과 종목 정보."""
     lists, info = {}, {}
     dates = m["dates"]
     X0 = S.factors(m, F, j, trade_ok=None if trade_i is None else m["alive"].iloc[trade_i], risk=False)
     X1 = S.factors(m, F, j, trade_ok=None if trade_i is None else m["alive"].iloc[trade_i], risk=True)
-    for s in ORDER:
+    for s in strats:
         lists[str(s)] = {str(rk): list(S.score(X, s).dropna().sort_values().index[:TOPN]) if X is not None else []
                          for rk, X in ((0, X0), (1, X1))}
     codes = sorted({c for v in lists.values() for L in v.values() for c in L})
@@ -184,12 +198,22 @@ def main():
     if a.no_grid and old.get("grid"):
         rows, months = old["grid"], old["months"]
     else:
-        rows, months = run_grid(m, F)
+        rows = []
+        for b, *_ in BANDS:
+            rows += run_grid(m, F, b)
+        months = finish(rows)
     qi = S.reb_days(dates, "Q")[-1]
-    snap_q = snapshot(m, F, qi - 1, qi, ev, last)
+    snap_q, snap_now = {"lists": {}, "stocks": {}}, {"lists": {}, "stocks": {}}
+    for b, *_ in BANDS:                       # 시총 구간마다 전략별 목록, 종목 정보는 합침
+        strats, _f = band_cfg(b)
+        for snap, args in ((snap_q, (qi - 1, qi)), (snap_now, (last, None))):
+            x = snapshot(m, F, args[0], args[1], ev, last, strats)
+            snap["lists"][b] = x["lists"]
+            snap["stocks"].update(x["stocks"])
+            snap["sig"] = x["sig"]
+    band_cfg("S")
     snap_q["date"] = ymd(dates[qi])
     snap_q["basis"] = QMONTH[int(dates[qi][4:6])]
-    snap_now = snapshot(m, F, last, None, ev, last)
     nxt = next_reb(dates[-1])
     today = C.today_kst()
     out = {
@@ -198,6 +222,7 @@ def main():
         "names": {str(s): S.NAMES[s] for s in ORDER} | {"99": "7전략 동일비중"},
         "desc": {str(s): DESC[s] for s in ORDER} | {"99": "1~7번 전략에 돈을 7등분해 각자 굴림(서로 재조정 없음)"},
         "order": ORDER[:7] + [99] + ORDER[7:],
+        "bands": [{"k": b, "l": l, "d": f"시가총액 하위 {lo*100:.0f}~{hi*100:.0f}%" if b != "A" else "거래 가능한 보통주 전체"} for b, l, lo, hi in BANDS],
         "grid": rows, "months": months,
         "q": snap_q, "now": snap_now, "next": nxt, "next_basis": QMONTH.get(int(nxt[5:7])) if nxt else None, "next_fin": next_fin(nxt),
         "alerted": old.get("alerted"),
@@ -211,7 +236,7 @@ def main():
         if not url and os.environ.get("GITHUB_REPOSITORY"):
             owner, repo = os.environ["GITHUB_REPOSITORY"].split("/")
             url = f"https://{owner.lower()}.github.io/{repo}/#small"
-        L = snap_now["lists"]["3"]["1"][:20]
+        L = snap_now["lists"]["S"]["3"]["1"][:20]
         names = ", ".join(snap_now["stocks"][c]["n"] for c in L[:10])
         ntfy.send(f"소형주 분기 리밸런싱 {today:%m/%d}",
                   f"오늘 시가에 분기 교체하는 날입니다(신호: {ymd(dates[-1])} 종가, {QMONTH[today.month]} 반영).\n"
