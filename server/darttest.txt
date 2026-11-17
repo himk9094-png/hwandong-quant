@@ -1,0 +1,11 @@
+darttest 2026-11-17 23:58:05 KST ip=13.124.17.147
+list page: HTTP 200, 92030 bytes, title: 
+zip names found: 176
+2015_4Q_BS_20230503040109.zip
+2015_4Q_CE_20230503040337.zip
+2015_4Q_CF_20230503040246.zip
+2015_4Q_PL_20230503040205.zip
+2016_1Q_BS_20230119040459.zip
+--- download calls in page:
+download 2015_4Q_BS_20230503040109.zip: 200 text/html; charset=utf-8, 975 bytes, type: HTML document, Unicode text, UTF-8 text, with CRLF line terminators
+  not a zip: File is not a zip file b'\r\n\r\n\r\n\r\n<!DOCTYPE html>\r\n<html>\r\n<head>\r\n<meta charset="utf-8">\r\n<meta name="viewport" content="user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, width=device-width">\r\n<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />\r\n<meta http-equiv="x-ua-compatible" c'
