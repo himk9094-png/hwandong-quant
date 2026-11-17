@@ -44,7 +44,7 @@ function chart(lines){
 
 // ---------------------------------------------------------------- 표
 function table(cols,rows,onclick){
-  var w=el("div");w.style.overflowX="auto";var tb=el("table","scrollt"),hr=el("tr");
+  var w=el("div","table-frame");w.tabIndex=0;var tb=el("table","scrollt"),hr=el("tr");
   cols.forEach(function(c){hr.appendChild(el("th",null,c))});tb.appendChild(hr);
   rows.forEach(function(r){var tr=el("tr");r.cells.forEach(function(v,i){var td=el("td",i?r.cls[i]||"":"",v);if(!i&&r.bold)td.style.fontWeight="700";tr.appendChild(td)});
     if(r.on){tr.style.background="#3a3215";Array.prototype.forEach.call(tr.children,function(td){td.style.background="#3a3215"})}

@@ -65,7 +65,7 @@ function presetById(id){return CE.PRESETS.filter(function(p){return p.id===id})[
 function sec(L,t){L.appendChild(el("div","sec",t))}
 function td2(a,b,c){var td=el("td");td.appendChild(el("div",c||"",a));if(b)td.appendChild(el("div","small",b));return td}
 function table(head){var t=el("table"),tr=el("tr");head.forEach(function(h){tr.appendChild(el("th",null,h))});t.appendChild(tr);return t}
-function wrap(t){var w=el("div");w.style.overflowX="auto";w.appendChild(t);return w}
+function wrap(t){var w=el("div","table-frame");w.tabIndex=0;w.appendChild(t);return w}
 function chip(t,c){var s=el("span","chip"+(c?" "+c:""),t);return s}
 function utTxt(p){return p===1?"매수":p===-1?"매도":"–"}
 function regCls(r){return r==="바닥권"?"good":r==="과열권"?"up":""}
