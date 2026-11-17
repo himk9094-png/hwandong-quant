@@ -285,36 +285,45 @@ def parse_fin(lst: list[dict], reprt: str) -> dict:
 
 
 def fin_tasks(px: pd.DataFrame, cc: dict) -> list[tuple]:
-    """리밸런싱(4·6·9·12월 첫 거래일)마다 시총 하위 30% 후보 → 필요한 (회사, 연도, 보고서) 목록."""
+    """리밸런싱(4·6·9·12월 첫 거래일)마다 필요한 (회사, 연도, 보고서) 목록 — 급한 것부터.
+    0: 다가올 리밸런싱용 소형주(하위 30%) 최신 보고서 · 1: 과거 소형주 · 2: 다가올 리밸런싱용 나머지 · 3: 과거 나머지(중대형주)
+    FIN_Q(기본 1.0) = 시총 하위 몇 %까지 모을지."""
+    q = float(os.environ.get("FIN_Q", "1.0"))
     px = px[(px.code.str[-1] == "0") & ~px.sect.str.contains("SPAC|관리|환기", na=False)
             & ~px.name.str.contains("스팩|리츠|REIT|인프라|선박|기업인수목적", na=False)]
     days = sorted(px.date.unique())
-    need = []
+    prio = {}
+
+    def add(snap, ry, rp, live):
+        small = snap.mcap <= snap.mcap.quantile(0.30)
+        upto = snap.mcap <= snap.mcap.quantile(q)
+        for code, sm in zip(snap.code[upto], small[upto]):
+            corp = cc.get(code)
+            if not corp:
+                continue
+            p = (0 if live else 1) if sm else (2 if live else 3)
+            for t in ((corp, ry, rp), (corp, ry - 1 if rp != "11011" else ry, "11011")):
+                prio[t] = min(prio.get(t, 9), p)
+
     for y in range(2016, today_kst().year + 1):
         for m, (ry, rp) in ((4, (y - 1, "11011")), (6, (y, "11013")), (9, (y, "11012")), (12, (y, "11014"))):
             first = next((d for d in days if d >= f"{y}{m:02d}01"), None)
             if not first or first[:6] != f"{y}{m:02d}":
                 continue
-            snap = px[px.date == first]
-            cut = snap.mcap.quantile(0.30)
-            for code in snap[snap.mcap <= cut].code:
-                corp = cc.get(code)
-                if not corp:
-                    continue
-                need.append((corp, ry, rp))
-                need.append((corp, (y - 1) if rp != "11011" else ry, "11011"))
-    # 다가올 리밸런싱용: 마지막 거래일의 하위 30% → 그날까지 제출 기한이 지난 최신 보고서
+            add(px[px.date == first], ry, rp, False)
+    # 다가올 리밸런싱용: 마지막 거래일 기준, 그날까지 제출 기한이 지난 최신 보고서
     last = days[-1]
     ly, md = int(last[:4]), last[4:]
     ry, rp = ((ly, "11014") if md >= "1116" else (ly, "11012") if md >= "0816" else
               (ly, "11013") if md >= "0516" else (ly - 1, "11011") if md >= "0401" else (ly - 1, "11014"))
-    snap = px[px.date == last]
-    for code in snap[snap.mcap <= snap.mcap.quantile(0.30)].code:
-        corp = cc.get(code)
-        if corp:
-            need.append((corp, ry, rp))
-            need.append((corp, ry - 1 if rp != "11011" else ry, "11011"))
-    return sorted(set(need), key=lambda t: (t[1], t[2], t[0]))
+    add(px[px.date == last], ry, rp, True)
+    global TASK_PRIO
+    TASK_PRIO = prio
+    # 같은 순위 안에서는 사업보고서 먼저(연 1회 리밸런싱 시험이 먼저 가능하게)
+    return sorted(prio, key=lambda t: (prio[t], t[2] != "11011", t[1], t[2], t[0]))
+
+
+TASK_PRIO: dict = {}
 
 
 def _recent(y: int, rp: str) -> bool:
@@ -367,7 +376,10 @@ def multi():
     log(f"요약 재무: {len(per)}개 기간, {sum(len(v) for v in per.values())}개 회사·기간 남음")
     rows = []
     t0 = time.time()
-    for pi, ((y, rp), corps) in enumerate(sorted(per.items())):
+    first = {}
+    for t in tasks:                     # tasks 는 급한 순 → 기간별 가장 급한 순위
+        first.setdefault((t[1], t[2]), TASK_PRIO.get(t, 9))
+    for pi, ((y, rp), corps) in enumerate(sorted(per.items(), key=lambda kv: (first.get(kv[0], 9), kv[0]))):
         cum = rp in ("11012", "11014")
         tp = time.time()
         for i in range(0, len(corps), 100):
@@ -423,13 +435,14 @@ def fin(limit: int | None = None):
         m = pd.read_parquet(mp, columns=["corp", "year", "rpt", "fs"])
         for (corp, y, rp), g in m.groupby(["corp", "year", "rpt"]).fs:
             fsmap[(corp, int(y), rp)] = "CFS" if "CFS" in set(g) else "OFS"
-    # 연간 보고서 먼저(모든 해) → 그다음 분기 보고서: 하루치만 모여도 연 1회 리밸런싱 시험이 가능하게
-    tasks = sorted(tasks, key=lambda t: (t[2] != "11011", t[1], t[2], t[0]))
+    # 순서는 fin_tasks 그대로(다가올 리밸런싱 소형주 → 과거 소형주 → 중대형주, 각각 사업보고서 먼저)
     done_p = FIN_DIR / "done.json"
     done = set(json.loads(done_p.read_text())) if done_p.exists() else set()
     todo = [t for t in tasks if f"{t[0]}_{t[1]}_{t[2]}" not in done]
-    if fsmap:      # 요약 재무에 아예 없는 회사·기간은 건너뜀(제출 안 함)
-        todo = [t for t in todo if (t[0], t[1], t[2]) in fsmap]
+    mdp = FIN_DIR / "multi_done.json"
+    mdone = set(json.loads(mdp.read_text())) if mdp.exists() else set()
+    # 요약 재무를 이미 확인했는데 없던 회사·기간은 건너뜀(제출 안 함). 요약을 아직 안 본 건 연결→별도 순으로 직접 시도
+    todo = [t for t in todo if (t[0], t[1], t[2]) in fsmap or f"{t[0]}_{t[1]}_{t[2]}" not in mdone]
     if limit:
         todo = todo[:limit]
     log(f"전체 재무: 남은 {len(todo)}건")
