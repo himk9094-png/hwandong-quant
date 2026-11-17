@@ -135,6 +135,12 @@ function yearly(res){
 }
 
 // ---------------------------------------------------------------- 화면: 목록
+function tableFrame(table){
+  var frame=el("div","table-frame");
+  frame.tabIndex=0;
+  frame.appendChild(table);
+  return frame;
+}
 function render(L){
   cur=null;
   var d=el("p","desc");d.innerHTML="직접 만든 <b>종목 바스켓</b>이나 <b>규칙 전략</b>을 2020년부터 백테스트합니다. 계산은 폰에서 바로 하고, 과거 데이터는 매월 자동 갱신됩니다. 포트폴리오는 이 기기 브라우저에 저장되니 가끔 <b>백업</b>하세요.";L.appendChild(d);
@@ -185,7 +191,7 @@ function drawResult(box,p){
   var tb=el("table"),hr=el("tr");["",ym(res.dates[0])+"~","연평균","MDD","샤프"].forEach(function(x){hr.appendChild(el("th",null,x))});tb.appendChild(hr);
   [["내 전략",s],[res.bmName,sb],["전 종목 평균",se]].forEach(function(x){var tr=el("tr");tr.appendChild(el("td",null,x[0]));var v=x[1];
     [v.tot,v.cagr,v.mdd].forEach(function(z){tr.appendChild(el("td",cls(z),X.F.sp(z)))});tr.appendChild(el("td",null,v.sh.toFixed(2)));tb.appendChild(tr)});
-  box.appendChild(tb);
+  box.appendChild(tableFrame(tb));
   box.appendChild(el("div","small","월 단위 계산 · 월 승률 "+Math.round(s.win)+"% · 연 변동성 "+s.vol.toFixed(0)+"% · 매매비용 편도 0.15% 반영"+(p.season?" · 5~10월 현금(이자 0)":"")));
   // 생성 이후
   var ci=res.dates.findIndex(function(d){return d>=p.created.replace(/-/g,"")});
@@ -194,7 +200,7 @@ function drawResult(box,p){
   // 연도별
   var Y=yearly(res),t2=el("table"),h2=el("tr");["연도","내 전략",res.bmName,"전 종목"].forEach(function(x){h2.appendChild(el("th",null,x))});t2.appendChild(h2);
   Object.keys(Y).sort().forEach(function(y){var o=Y[y],tr=el("tr");tr.appendChild(el("td",null,y+(y===res.dates[res.dates.length-1].slice(0,4)?" (진행)":"")));[o.a,o.b,o.c].forEach(function(z){z=(z-1)*100;tr.appendChild(el("td",cls(z),X.F.sp(z)))});t2.appendChild(tr)});
-  box.appendChild(el("div","sec","연도별"));box.appendChild(t2);
+  box.appendChild(el("div","sec","연도별"));box.appendChild(tableFrame(t2));
   if(p.type==="rule")drawPicks(box,p);else drawBasket(box,p);
   box.appendChild(el("div","sec","주의"));
   ["현재 상장된 종목만으로 계산합니다(상장폐지 종목 없음) → 실제보다 좋게 나옵니다.",
@@ -211,7 +217,7 @@ function drawPicks(box,p){
     tr.appendChild(el("td",null,Math.round(x.s)));tr.appendChild(el("td",null,X.F.eok(x.r.mc)));tr.appendChild(el("td",cls(x.r.m12),x.r.m12!=null?X.F.sp(x.r.m12*100):"–"));
     var B=X.BY()[c];if(B){tr.style.cursor="pointer";tr.onclick=function(){X.openSheet(B)}}
     tb.appendChild(tr)});
-  box.appendChild(tb);
+  box.appendChild(tableFrame(tb));
 }
 function entryPx(items){var e={};items.forEach(function(it){var v=lastPx(it.c);if(v)e[it.c]=v});return e}
 function forward(p){
@@ -227,7 +233,7 @@ function drawBasket(box,p){
   var tb=el("table"),hr=el("tr");["종목","만든 날","현재","수익률"].forEach(function(x){hr.appendChild(el("th",null,x))});tb.appendChild(hr);
   fw.rows.forEach(function(x){var tr=el("tr");tr.appendChild(el("td",null,nameOf(x.c)));tr.appendChild(el("td",null,num(p.entry[x.c])));tr.appendChild(el("td",null,num(lastPx(x.c))));tr.appendChild(el("td",cls(x.r),X.F.sp(x.r)));
     var B=X.BY()[x.c];if(B){tr.style.cursor="pointer";tr.onclick=function(){X.openSheet(B)}}tb.appendChild(tr)});
-  box.appendChild(tb);
+  box.appendChild(tableFrame(tb));
 }
 function chart(res){
   var w=600,h=200,all=res.eq.concat(res.bm,res.ew),mn=Math.min.apply(null,all),mx=Math.max.apply(null,all);
