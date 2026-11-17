@@ -25,11 +25,15 @@ function chart(lines,M){
 }
 function card(k){
   var T=J.tabs[k];if(!T)return null;var el=X().el,cls=X().cls;
+  var on=!!(X().sig&&X().sig()),si=-1;T.lines.forEach(function(l,i){if(l.sig)si=i});
+  // '매수신호만'을 켜면 그 경우(신호 줄)를 맨 앞·제목으로, 끄면 신호 줄은 빼고 보여줌
+  var lines=si<0?T.lines:on?[T.lines[si]].concat(T.lines.filter(function(l,i){return i!==si})):T.lines.filter(function(l,i){return i!==si});
+  T={cond:T.cond,lines:lines};
   var box=el("details","tpcard");box.open=isOpen();box.style.cssText="margin:0 0 12px;border:1px solid #2c3754;border-radius:12px;padding:10px 12px;background:rgba(255,255,255,.02)";
   box.addEventListener("toggle",function(){setOpen(box.open)});
   var L0=T.lines[0],y=L0.y||{};
   var sm=el("summary");sm.style.cssText="cursor:pointer;font-weight:700;list-style-position:inside";
-  sm.innerHTML="이 탭대로 샀다면 · 연 <span class='"+cls(L0.cagr)+"'>"+pc(L0.cagr)+"</span> · 최대낙폭 "+pc(L0.mdd)+" · 26년 <span class='"+cls(y["2026"])+"'>"+pc(y["2026"],true)+"</span>";
+  sm.innerHTML=(on&&si>=0?"매수신호만 켜고 샀다면":"이 탭대로 샀다면")+" · 연 <span class='"+cls(L0.cagr)+"'>"+pc(L0.cagr)+"</span> · 최대낙폭 "+pc(L0.mdd)+" · 26년 <span class='"+cls(y["2026"])+"'>"+pc(y["2026"],true)+"</span>";
   box.appendChild(sm);
   var body=el("div");body.style.marginTop="8px";
   body.appendChild(chart(T.lines,J.months));

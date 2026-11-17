@@ -74,9 +74,10 @@ def main():
         setu(u)
         mem[k] = G.membership(m, F, s, 0.2)
         L.append(G.event_line(m, G.newly((nsig >= 1) & mem[k]) & U, 20, "점수 상위20%+매수신호 · 20일 보유"))
+        L[-1]["sig"] = 1
         log(L[-1]["name"], L[-1]["cagr"])
         L.append(dict(bench_big if u is BIG else bench_all))
-        cond += " 초록 줄 = '매수신호만'을 켰을 때: 점수 상위 20% 종목에 신호가 새로 뜨면 다음 날 시가 매수 → 20거래일 보유."
+        cond += " '매수신호만'을 켜면 카드가 그 경우로 바뀜: 점수 상위 20% 종목에 신호가 새로 뜨면 다음 날 시가 매수 → 20거래일 보유."
         out[k] = {"cond": cond, "lines": L}
     # 매수신호 탭
     L = [G.event_line(m, G.newly(nsig >= 1) & U, 20, "신호 1개↑ 전부 · 20일 보유"),
