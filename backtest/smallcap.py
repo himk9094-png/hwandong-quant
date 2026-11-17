@@ -239,6 +239,8 @@ def score(X: pd.DataFrame, strat: int) -> pd.Series:
         return rank(cap).where((ni > 0) & (eq > 0))
     if strat == 11:                                          # 저PBR + 흑자(최근 4분기 순이익 > 0)
         return rank(pbr).where(ni > 0)
+    if strat == 13:                                          # 책의 신F-스코어: PBR 하위 20% 중 F 3점, PBR 낮은 순
+        return rank(pbr).where((fscore == 3) & cfo.notna() & (pbr <= pbr.quantile(0.2)))
     if strat == 0:
         return rank(cap)                                     # 시가총액 가장 작은 순
     if strat == 1:
@@ -267,7 +269,7 @@ def picks(m, F, i: int, strat: int, n: int):
     return list(score(X, strat).dropna().sort_values().index[:n])
 
 
-NAMES = {0: "초소형주(시총 하위)", 12: "초소형주+흑자", 11: "저PBR+흑자", 1: "소형주 저PBR", 2: "파마+LSV 콤보", 3: "슈퍼가치", 4: "신마법공식 2.0", 5: "F-스코어", 6: "슈퍼퀄리티", 7: "짬뽕"}
+NAMES = {13: "저PBR20%+F3(책)", 0: "초소형주(시총 하위)", 12: "초소형주+흑자", 11: "저PBR+흑자", 1: "소형주 저PBR", 2: "파마+LSV 콤보", 3: "슈퍼가치", 4: "신마법공식 2.0", 5: "F-스코어", 6: "슈퍼퀄리티", 7: "짬뽕"}
 NEEDS_FULL = {2, 3, 5, 6, 7}           # 영업현금흐름 필요
 NEEDS_GP = {4, 6, 7}
 
@@ -287,6 +289,8 @@ def reb_days(dates, freq):
             key = (y, mo)
         elif freq == "Q":
             key = (y, mo) if mo in ("04", "06", "09", "12") else prev
+        elif freq == "J":                                   # 연 1회 7월(강환국 책 방식)
+            key = (y, mo) if mo == "07" else prev
         elif freq == "Y":
             key = (y, mo) if mo == "04" else prev
         if key != prev and key is not None:
