@@ -18,6 +18,9 @@ from backtest import smallcap as S
 from backtest.smallcap_app import r1
 
 OUT = C.ROOT / "docs" / "tabperf.json"
+OUTF = C.ROOT / "docs" / "tabperf_f.json"   # 앱 필터 조합별(필터를 켰을 때만 받음)
+CAPS = {"": (0, None), "0-1000": (0, 1000e8), "1000-5000": (1000e8, 5000e8), "5000-20000": (5000e8, 20000e8), "20000-": (20000e8, None)}
+TVS = {"0": 0.0, "5": 5e8, "20": 20e8, "100": 100e8}
 ALL = dict(MIN_CAP=300e8, MIN_VAL=2e8, TOPK=0, KOSPI_ONLY=False, SMALL_Q=1.0, CAP_LO=0.0)       # 앱 기본 유니버스
 BIG = dict(MIN_CAP=0.0, MIN_VAL=1e8, TOPK=100, KOSPI_ONLY=True, SMALL_Q=1.0, CAP_LO=0.0)       # 코스피 시총 상위 100
 TABS = {
@@ -99,7 +102,38 @@ def main():
         log(x["name"], x["cagr"])
     out["surge"] = {"cond": "그날 종가 기준 급등점수가 기준 이상인 종목을 다음 날 시가 매수 → 1·3·5거래일 보유 후 종가 매도. 매일 새로 사고판다. "
                             "시세에 고가·저가가 없어 거래량은 거래대금으로 대신함.", "lines": L}
+    # 앱 필터(시장·시총·거래대금) 조합마다: 점수 상위 20 분기 교체 + 매수신호 줄 + 같은 조건 동일비중
+    fout = {}
+    kospi = m["kospi"]
+    for mk in ("", "KOSPI", "KOSDAQ"):
+        for ck, (lo, hi) in CAPS.items():
+            for tk, tv in TVS.items():
+                key = f"{mk}|{ck}|{tk}"
+                if key == "||0":
+                    continue
+                fu = dict(ALL, MIN_CAP=max(300e8, lo), MAX_CAP=hi or 0.0, MIN_VAL=max(2e8, tv))
+                fu["MKT"] = {"": None, "KOSPI": "P", "KOSDAQ": "Q"}[mk]
+                mask = U & (m["mcap"] >= fu["MIN_CAP"]) & (m["val20"] >= fu["MIN_VAL"])
+                if hi:
+                    mask &= m["mcap"] < hi
+                if mk:
+                    mask &= kospi if mk == "KOSPI" else ~kospi
+                setu(fu)
+                S.MIN_N = 10
+                b = line(m, F, f"같은 조건 전체 동일비중", 30, 99999, fu, "Q")
+                b["b"] = 1
+                tabs = {}
+                for k in ("total", "value", "quality", "mom", "mf"):
+                    s, n, _ = TABS[k]
+                    a1 = line(m, F, f"{S.NAMES[s]} 상위{n} · 분기 교체", s, n, fu, "Q")
+                    a2 = G.event_line(m, G.newly((nsig >= 1) & mem[k]) & mask, 20, "점수 상위20%+매수신호 · 20일 보유")
+                    a2["sig"] = 1
+                    tabs[k] = [a1, a2]
+                S.MIN_N = 50
+                fout[key] = {"bench": b, "tabs": tabs}
+                log(f"필터 {key} 끝")
     setu(ALL)
+    S.MKT, S.MAX_CAP = None, 0.0
     months = sorted({x.strftime("%Y-%m") for v in out.values() for l in v["lines"] for x in l["_e"].resample("ME").last().index})
     for v in out.values():
         for l in v["lines"]:
@@ -112,6 +146,18 @@ def main():
            "start": f"{S.START[:4]}-{S.START[4:6]}", "asof": f"{m['dates'][-1][:4]}-{m['dates'][-1][4:6]}-{m['dates'][-1][6:]}",
            "slip": S.SLIP * 100, "months": months, "tabs": out}
     OUT.write_text(json.dumps(res, ensure_ascii=False, separators=(",", ":")))
+    def mon(l):
+        e = l.pop("_e").resample("ME").last()
+        e.index = e.index.strftime("%Y-%m")
+        l["c"] = [None if pd.isna(x) else round(float(x), 3) for x in e.reindex(months).values]
+        return l
+    for v in fout.values():
+        mon(v["bench"])
+        for L in v["tabs"].values():
+            for l in L:
+                mon(l)
+    OUTF.write_text(json.dumps({"made": res["made"], "months": months, "f": fout}, ensure_ascii=False, separators=(",", ":")))
+    log(f"저장 {OUTF} ({OUTF.stat().st_size // 1024} KB)")
     log(f"저장 {OUT} ({OUT.stat().st_size // 1024} KB) · {time.time() - t:.0f}초")
 
 

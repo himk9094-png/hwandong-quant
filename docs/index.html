@@ -333,7 +333,8 @@ function showInfo(){
 }
 function goTab(k){var t=TABS.find(function(x){return x.k===k});if(!t)return;tab=k;shown=50;Array.prototype.forEach.call($("#tabs").children,function(x){var on=x.textContent===t.l;x.classList.toggle("on",on);if(on)x.scrollIntoView({inline:"center",block:"nearest"})});render();window.scrollTo(0,0)}
 function goPf(){goTab("pf")}
-window.HQ={sig:function(){return sigOnly},el:el,num:num,cls:cls,$:$,F:F,BY:function(){return BY},meta:function(){return D&&D.meta},show:show,closeSheet:closeSheet,openSheet:openSheet,render:render,goPf:goPf,goTab:goTab};
+window.HQ={sig:function(){return sigOnly},filt:function(){return {mkt:$("#fMkt").value,cap:$("#fCap").value,tv:$("#fTv").value||"0",
+  label:[$("#fMkt"),$("#fCap"),$("#fTv")].filter(function(x){return x.value&&x.value!=="0"}).map(function(x){return x.options[x.selectedIndex].text}).join("·")}},el:el,num:num,cls:cls,$:$,F:F,BY:function(){return BY},meta:function(){return D&&D.meta},show:show,closeSheet:closeSheet,openSheet:openSheet,render:render,goPf:goPf,goTab:goTab};
 function init(data){
   D=data;R=data.rows.map(function(a){var o={};data.cols.forEach(function(c,i){o[c]=a[i]});return o});
   R.forEach(function(r){BY[r.code]=r});

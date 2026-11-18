@@ -35,6 +35,9 @@ SMALL_Q = 0.20
 MIN_CAP = 0.0                 # 시총 최소(원). 앱 목록 탭과 같게 하려면 300억
 TOPK = 0                      # >0 이면 시총 상위 TOPK 종목만(대형주 탭: 코스피 상위 100)
 KOSPI_ONLY = False
+MKT = None                    # 앱 시장 필터: "P"(코스피) / "Q"(코스닥) / None
+MAX_CAP = 0.0                 # >0 이면 시총 상한(원)
+MIN_N = 50                    # 후보가 이보다 적으면 그날은 고르지 않음
 SEASON = False                # True 면 5~10월은 현금(11월 매수 → 2월 교체 → 5월 매도)
 CAP_LO = 0.0                  # 시총 하위 CAP_LO ~ SMALL_Q 구간만(0, 0.2 = 소형주 / 0.8, 1.0 = 대형주)
 START = "20160401"
@@ -216,10 +219,14 @@ def factors(m, F, j: int, trade_ok=None, risk=None):
         ok &= ~m["risk"].iloc[j]
     if MIN_CAP > 0:
         ok &= mc >= MIN_CAP
-    if KOSPI_ONLY:
+    if KOSPI_ONLY or MKT == "P":
         ok &= m["kospi"].iloc[j]
+    elif MKT == "Q":
+        ok &= ~m["kospi"].iloc[j]
+    if MAX_CAP > 0:
+        ok &= mc < MAX_CAP
     mc = mc[ok]
-    if len(mc) < 50:
+    if len(mc) < MIN_N:
         return None
     if TOPK:
         small = mc.nlargest(TOPK).index

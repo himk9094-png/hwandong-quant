@@ -1,7 +1,8 @@
 /* 목록 탭 위의 '이 탭대로 샀다면' 백테스트 카드. 데이터 = tabperf.json (매일 밤 collect 작업이 갱신). */
 (function(){
 "use strict";
-var J=null,loading=false,err=false,KEY="hq_tp_open";
+var J=null,loading=false,err=false,KEY="hq_tp_open",FJ=null,floading=false,ferr=false;
+var ALLMKT={total:1,value:1,quality:1,mom:1,mf:1};
 var COL=["#f4c04e","#5aa9ff","#3ecf8e","#e07bff","#ff8a5c"],GREY="#8f9ab3";
 function colr(L,i){return L.b?GREY:COL[i%COL.length]}
 function X(){return window.HQ}
@@ -25,24 +26,36 @@ function chart(lines,M){
 }
 function card(k){
   var T=J.tabs[k];if(!T)return null;var el=X().el,cls=X().cls;
+  var fl=X().filt?X().filt():{mkt:"",cap:"",tv:"0",label:""},fkey=fl.mkt+"|"+fl.cap+"|"+fl.tv,note="";
+  if(fkey!=="||0"){
+    if(ALLMKT[k]&&FJ&&FJ.f[fkey]){var FF=FJ.f[fkey];T={cond:T.cond,lines:FF.tabs[k].concat([FF.bench]),months:FJ.months};note="필터("+fl.label+") 적용: 그 조건 안에서 점수 상위 20종목 · 비교선은 같은 조건 전체 동일비중."}
+    else if(ALLMKT[k]&&!ferr){loadF();note="필터 적용 결과 불러오는 중…"}
+    else note="이 카드는 필터("+fl.label+")를 반영하지 않습니다.";
+  }
   var on=!!(X().sig&&X().sig()),si=-1;T.lines.forEach(function(l,i){if(l.sig)si=i});
   // '매수신호만'을 켜면 그 경우(신호 줄)를 맨 앞·제목으로, 끄면 신호 줄은 빼고 보여줌
   var lines=si<0?T.lines:on?[T.lines[si]].concat(T.lines.filter(function(l,i){return i!==si})):T.lines.filter(function(l,i){return i!==si});
-  T={cond:T.cond,lines:lines};
+  T={cond:T.cond,lines:lines,months:T.months};
   var box=el("details","tpcard");box.open=isOpen();box.style.cssText="margin:0 0 12px;border:1px solid #2c3754;border-radius:12px;padding:10px 12px;background:rgba(255,255,255,.02)";
   box.addEventListener("toggle",function(){setOpen(box.open)});
   var L0=T.lines[0],y=L0.y||{};
   var sm=el("summary");sm.style.cssText="cursor:pointer;font-weight:700;list-style-position:inside";
-  sm.innerHTML=(on&&si>=0?"매수신호만 켜고 샀다면":"이 탭대로 샀다면")+" · 연 <span class='"+cls(L0.cagr)+"'>"+pc(L0.cagr)+"</span> · 최대낙폭 "+pc(L0.mdd)+" · 26년 <span class='"+cls(y["2026"])+"'>"+pc(y["2026"],true)+"</span>";
+  var fon=fkey!=="||0"&&ALLMKT[k]&&FJ&&FJ.f[fkey];
+  sm.innerHTML=(fon?"이 조건"+(on&&si>=0?"+매수신호로":"으로"):on&&si>=0?"매수신호만 켜고":"이 탭대로")+" 샀다면 · 연 <span class='"+cls(L0.cagr)+"'>"+pc(L0.cagr)+"</span> · 최대낙폭 "+pc(L0.mdd)+" · 26년 <span class='"+cls(y["2026"])+"'>"+pc(y["2026"],true)+"</span>";
   box.appendChild(sm);
   var body=el("div");body.style.marginTop="8px";
-  body.appendChild(chart(T.lines,J.months));
+  body.appendChild(chart(T.lines,T.months||J.months));
+  if(note){var nt=el("div","small",note);nt.style.color="#f4c04e";body.appendChild(nt)}
   var tb=el("table","scrollt");tb.style.marginTop="6px";var hr=el("tr");["","연수익","최대낙폭","26년","25년","24년"].forEach(function(h){hr.appendChild(el("th",null,h))});tb.appendChild(hr);
   T.lines.forEach(function(Ln,i){var tr=el("tr"),yy=Ln.y||{};var td=el("td");var sw=el("span");sw.style.cssText="display:inline-block;width:12px;height:0;border-top:3px "+(Ln.b?"dotted ":"solid ")+colr(Ln,i)+";margin-right:6px;vertical-align:middle";td.appendChild(sw);td.appendChild(document.createTextNode(Ln.name));tr.appendChild(td);
     [[Ln.cagr,0],[Ln.mdd,0],[yy["2026"],1],[yy["2025"],1],[yy["2024"],1]].forEach(function(v,j){tr.appendChild(el("td",j===1?"":cls(v[0]),pc(v[0],!!v[1])))});tb.appendChild(tr)});
   var w=el("div");w.style.overflowX="auto";w.appendChild(tb);body.appendChild(w);
   body.appendChild(el("div","small",T.cond+" "+J.start.replace("-",".")+"~"+J.asof.slice(0,7).replace("-",".")+" · 상장폐지 포함 · 재무는 공시 다음 날부터 · 다음 날 시가 체결 · 수수료+세금+슬리피지 "+J.slip.toFixed(1)+"% 반영. 과거 성과이며 보장 아님."));
   box.appendChild(body);return box;
+}
+function loadF(){
+  if(FJ||floading||ferr)return;floading=true;
+  fetch("tabperf_f.json?t="+Date.now()).then(function(r){if(!r.ok)throw new Error(r.status);return r.json()}).then(function(j){FJ=j;X().render()}).catch(function(){ferr=true;X().render()});
 }
 function mount(L,k){
   if(J){var c=card(k);if(c)L.appendChild(c);return}
