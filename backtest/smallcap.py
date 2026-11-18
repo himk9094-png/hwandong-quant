@@ -353,6 +353,8 @@ def reb_days(dates, freq):
             key = (y, mo)
         elif freq == "Q":
             key = (y, mo) if mo in ("04", "06", "09", "12") else prev
+        elif freq == "N":                                   # 11월 매수 → 5월 매도(중간 교체 없음)
+            key = (y, mo) if mo in ("11", "05") else prev
         elif freq == "S":                                   # 계절성: 11월 매수, 2월 교체, 5월 매도
             key = (y, mo) if mo in ("11", "02", "05") else prev
         elif freq == "J":                                   # 연 1회 7월(강환국 책 방식)
