@@ -48,7 +48,7 @@ jobs:
         run: |
           save() { (flock 9; cd store && git config user.name "github-actions[bot]" && git config user.email "41898282+github-actions[bot]@users.noreply.github.com" && git add -A && { git diff --cached --quiet || { git commit -qm "data $1 $(date -u +%F)" && git push -q origin HEAD:data; }; }) 9>/tmp/git.lock; }
           ( while sleep 900; do save "progress $(date -u +%H:%M)"; done ) & BG=$!
-          lim() { case $1 in multi) echo 1800;; krx) echo 1800;; disc) echo 2400;; fin) echo 12600;; *) echo 600;; esac; }   # 합계가 작업 제한(330분) 안에 들고 소형주 탭 갱신까지 끝나게
+          lim() { case $1 in multi) echo 1800;; krx) echo 1800;; krxhl) echo 9000;; disc) echo 2400;; fin) echo 12600;; *) echo 600;; esac; }   # 합계가 작업 제한(330분) 안에 들고 소형주 탭 갱신까지 끝나게
           for s in $STEPS; do n=${s%%:*}; a=""; [ "$n" != "$s" ] && a=${s#*:}; timeout --signal=INT $(lim $n) python -u -X faulthandler -m backtest.collect $n $a || echo "::warning::$s 단계 실패/시간초과"; save $n; done
           kill $BG 2>/dev/null || true
           python -m backtest.collect status

@@ -24,6 +24,7 @@ import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import requests
 
@@ -50,7 +51,8 @@ def today_kst() -> dt.date:
 
 # ---------------------------------------------------------------- KRX
 KCOLS = {"BAS_DD": "date", "ISU_CD": "code", "ISU_NM": "name", "SECT_TP_NM": "sect", "TDD_CLSPRC": "close",
-         "TDD_OPNPRC": "open", "FLUC_RT": "chg", "ACC_TRDVAL": "val", "MKTCAP": "mcap", "LIST_SHRS": "shares"}
+         "TDD_OPNPRC": "open", "FLUC_RT": "chg", "ACC_TRDVAL": "val", "MKTCAP": "mcap", "LIST_SHRS": "shares",
+         "TDD_HGPRC": "high", "TDD_LWPRC": "low"}
 
 
 def _krx_day(s, ymd, mkt):
@@ -101,13 +103,15 @@ def krx():
                 df = pd.DataFrame(rows)
                 df["mkt"] = df["MKT_NM"].map({"KOSPI": "P", "KOSDAQ": "Q"}).fillna("Q") if "MKT_NM" in df else "?"
                 df = df.rename(columns=KCOLS)[list(KCOLS.values()) + ["mkt"]]
-                for c in ("close", "open", "chg", "val", "mcap", "shares"):
+                for c in ("close", "open", "chg", "val", "mcap", "shares", "high", "low"):
                     df[c] = pd.to_numeric(df[c].astype(str).str.replace(",", ""), errors="coerce")
                 frames.append(df)
         if frames:
             new = pd.concat(frames, ignore_index=True)
             new["close"] = new["close"].astype("float32")
             new["open"] = new["open"].astype("float32")
+            new["high"] = new["high"].astype("float32")
+            new["low"] = new["low"].astype("float32")
             new["chg"] = new["chg"].astype("float32")
             new["shares"] = new["shares"].astype("float64")
             allf = pd.concat([old, new], ignore_index=True) if old is not None else new
@@ -117,6 +121,44 @@ def krx():
             allf.to_parquet(p, index=False, compression="zstd")
         empty_p.write_text(json.dumps(sorted(holidays)))
         log(f"KRX {year}: +{len(days)}일 ({time.time() - t:.0f}초)")
+
+
+def krxhl():
+    """예전에 받은 KRX 일별 자료에 고가·저가가 없으면 다시 받아 채운다(급등 지정가 매도 시험용)."""
+    s = requests.Session()
+    s.headers.update({"AUTH_KEY": os.environ["KRX_API_KEY"].strip(), "User-Agent": "quant-dashboard/1.0"})
+    for p in sorted(KRX_DIR.glob("*.parquet")):
+        old = pd.read_parquet(p)
+        if "high" not in old:
+            old["high"] = np.nan
+            old["low"] = np.nan
+        miss = sorted(old.loc[old["high"].isna(), "date"].astype(str).unique())
+        if not miss:
+            continue
+        t = time.time()
+
+        def one(ymd):
+            rows = _krx_day(s, ymd, "KOSPI") + _krx_day(s, ymd, "KOSDAQ")
+            return [(ymd, r["ISU_CD"], r.get("TDD_HGPRC"), r.get("TDD_LWPRC")) for r in rows]
+
+        got = []
+        with ThreadPoolExecutor(4) as ex:
+            for rows in ex.map(one, miss):
+                got += rows
+        if not got:
+            continue
+        hl = pd.DataFrame(got, columns=["date", "code", "h", "l"])
+        for c in ("h", "l"):
+            hl[c] = pd.to_numeric(hl[c].astype(str).str.replace(",", ""), errors="coerce").astype("float32")
+        for c in ("date", "code"):
+            old[c] = old[c].astype(str)
+        old = old.merge(hl, on=["date", "code"], how="left")
+        old["high"] = old["high"].fillna(old.pop("h")).astype("float32")
+        old["low"] = old["low"].fillna(old.pop("l")).astype("float32")
+        for c in ("code", "name", "sect", "mkt", "date"):
+            old[c] = old[c].astype("category")
+        old.to_parquet(p, index=False, compression="zstd")
+        log(f"KRX 고가·저가 {p.stem}: {len(miss)}일 ({time.time() - t:.0f}초)")
 
 
 def krx_all() -> pd.DataFrame:
@@ -552,5 +594,5 @@ def status():
 
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else "status"
-    fn = {"krx": krx, "disc": disc, "multi": multi, "fin": fin, "status": status, "probe": probe}[cmd]
+    fn = {"krx": krx, "krxhl": krxhl, "disc": disc, "multi": multi, "fin": fin, "status": status, "probe": probe}[cmd]
     fn(int(sys.argv[2])) if cmd == "fin" and len(sys.argv) > 2 else fn()
