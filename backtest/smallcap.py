@@ -37,6 +37,8 @@ TOPK = 0                      # >0 이면 시총 상위 TOPK 종목만(대형주
 KOSPI_ONLY = False
 MKT = None                    # 앱 시장 필터: "P"(코스피) / "Q"(코스닥) / None
 MAX_CAP = 0.0                 # >0 이면 시총 상한(원)
+TP = 0.0                      # >0 이면 산 가격 대비 +TP 에 지정가 익절(그날 고가가 닿으면 체결)
+TP_REFILL = False             # 익절 뒤 다음 날 시가에 다음 순위 종목을 산다(False 면 다음 리밸런싱까지 현금)
 MIN_N = 50                    # 후보가 이보다 적으면 그날은 고르지 않음
 SEASON = False                # True 면 5~10월은 현금(11월 매수 → 2월 교체 → 5월 매도)
 CAP_LO = 0.0                  # 시총 하위 CAP_LO ~ SMALL_Q 구간만(0, 0.2 = 소형주 / 0.8, 1.0 = 대형주)
@@ -82,6 +84,7 @@ def load():
     base = close / (1 + ret)
     gap = (opn / base - 1).where(opn > 0)          # 전일 기준가 → 오늘 시가
     intra = (close / opn - 1).where(opn > 0)        # 오늘 시가 → 종가
+    hro = (piv("high") / opn).where(opn > 0) if "high" in px else None   # 오늘 고가 ÷ 시가(익절 지정가 체결 판단)
     alive = close.notna() & (close > 0)
     flags = pd.DataFrame(False, index=dates, columns=codes)
     if sect is not None:
@@ -91,7 +94,7 @@ def load():
     m = dict(dates=dates, codes=codes, close=close, open=opn, ret=ret.fillna(0.0), gap=gap, intra=intra, mcap=mcap,
              val20=val.rolling(20, min_periods=10).mean(), shares=shares, alive=alive, flags=flags,
              static_ok=pd.Series(common & okname, index=codes), names=last.reindex(codes)["name"], kospi=kospi,
-             val=val.astype("float32"))
+             val=val.astype("float32"), hro=hro)
     return m
 
 
@@ -385,11 +388,16 @@ def simulate(m, F, strat, freq, n, cost=True):
     alive = m["alive"].values
     col = {c: k for k, c in enumerate(m["codes"])}
     w = {}                     # 종목 → 금액(계좌 1 기준)
+    g = {}                     # 종목 → 산 가격 대비 배수(익절 판단)
+    hro = m["hro"].values if TP and m.get("hro") is not None else None
+    ranked, sold, pend = [], set(), []
+    ntp = 0
     cash = 1.0
     eq = []
     traded = 0.0
     costpaid = 0.0
     nhold = []
+    inv = []                   # 주식 비중(현금 효과 구분용)
     for i in range(start, len(dates)):
         d = dates[i]
         # 오늘 시가까지: 보유 종목에 갭 적용(상장폐지·정지면 그대로)
@@ -397,7 +405,12 @@ def simulate(m, F, strat, freq, n, cost=True):
             k = col[c]
             if alive[i, k] and not np.isnan(gap[i, k]):
                 w[c] *= 1 + gap[i, k]
+                if c in g:
+                    g[c] *= 1 + gap[i, k]
         if i in rset:
+            sold, pend = set(), []
+            if hro is not None:
+                ranked = picks(m, F, i, strat, n * 3)
             tgt = picks(m, F, i, strat, n)
             total = cash + sum(w.values())
             tw = {c: total / len(tgt) for c in tgt} if tgt else {}
@@ -415,9 +428,12 @@ def simulate(m, F, strat, freq, n, cost=True):
                     cash -= fee
                 cash -= delta
                 if new > 0:
+                    if c not in w:
+                        g[c] = 1.0
                     w[c] = new
                 else:
                     w.pop(c, None)
+                    g.pop(c, None)
             traded += tr0 / total / 2          # 회전율: 한쪽(매수 또는 매도) 기준, 계좌 대비
             costpaid += cp0 / total
             # 비용 차감으로 생긴 음수 현금은 비중을 살짝 줄여 맞춤
@@ -426,15 +442,57 @@ def simulate(m, F, strat, freq, n, cost=True):
                 for c in w:
                     w[c] *= (s + cash) / s
                 cash = 0.0
+        if hro is not None:
+            tax = sell_tax(d)
+            # 어제 익절한 돈으로 오늘 시가에 다음 순위 종목 매수
+            if pend and TP_REFILL:
+                for c in ranked:
+                    if not pend:
+                        break
+                    k = col[c]
+                    if c in w or c in sold or not alive[i, k] or np.isnan(intra[i, k]):
+                        continue
+                    amt = min(pend.pop(), cash)
+                    fee = amt * (COMM + SLIP) if cost else 0.0
+                    w[c], g[c] = amt - fee, 1.0
+                    cash -= amt
+                    costpaid += fee
+                    traded += amt
+            pend = []
+            # 익절: 시가가 이미 목표 이상이면 시가에, 아니면 고가가 목표를 넘으면 목표가에 매도(지정가라 슬리피지 없음)
+            for c in list(w):
+                k = col[c]
+                if not alive[i, k] or c not in g or np.isnan(hro[i, k]):
+                    continue
+                tgt_mul = 1 + TP
+                if g[c] >= tgt_mul:
+                    val = w[c]
+                elif g[c] * hro[i, k] >= tgt_mul * 1.003:     # 목표가에 '닿기만' 한 경우는 못 팔았다고 봄
+                    val = w[c] * tgt_mul / g[c]
+                else:
+                    continue
+                fee = val * (COMM + tax) if cost else 0.0
+                cash += val - fee
+                costpaid += fee
+                traded += val
+                w.pop(c)
+                g.pop(c)
+                sold.add(c)
+                pend.append(val - fee)
+                ntp += 1
         # 시가 → 종가
         for c in list(w):
             k = col[c]
             if alive[i, k]:
                 x = intra[i, k] if not np.isnan(intra[i, k]) else 0.0
                 w[c] *= 1 + x
+                if c in g:
+                    g[c] *= 1 + x
             elif _gone(alive, i, k):
                 cash += w.pop(c)              # 상장폐지: 마지막 거래 가격(정리매매 포함)으로 현금화
+                g.pop(c, None)
         eq.append(cash + sum(w.values()))
+        inv.append(sum(w.values()) / max(eq[-1], 1e-12))
         nhold.append(len(w))
     e = pd.Series(eq, index=pd.to_datetime(dates[start:]))
     yrs = (e.index[-1] - e.index[0]).days / 365.25
@@ -444,7 +502,8 @@ def simulate(m, F, strat, freq, n, cost=True):
     yearly.iloc[0] = e.resample("YE").last().iloc[0] / 1.0 - 1
     return {"cagr": cagr, "mdd": mdd, "turnover": traded / yrs, "cost": costpaid / yrs, "final": e.iloc[-1],
             "yearly": {str(k.year): round(float(v) * 100, 1) for k, v in yearly.items()},
-            "hold": float(np.mean(nhold)), "curve": e}
+            "hold": float(np.mean(nhold)), "curve": e, "tp": ntp / yrs,
+            "invested": float(np.mean(inv)) if inv else 1.0}
 
 
 def _gone(alive, i, k):
