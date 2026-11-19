@@ -211,9 +211,10 @@ case ${1:-status} in
   log) shift; cmd_log "$@";;
   darttest) cmd_darttest;;
   dartbulk) cmd_dartbulk;;
+  toss) shift; python3 "$D/toss.py" "$@";;
   _dartbulk) _dartbulk;;
   update) curl -fsSL "https://raw.githubusercontent.com/$REPO/main/server/install.sh?t=$(date +%s)" -o /tmp/hq.sh && bash /tmp/hq.sh;;
-  *) echo "hq status | check | token | run daily|coin|collect | log | darttest | dartbulk | update";;
+  *) echo "hq status | check | token | run daily|coin|collect | log | darttest | dartbulk | toss ... | update";;
 esac
 __HQ__
 chmod 755 /usr/local/bin/hq
@@ -248,6 +249,27 @@ Unit=hq@coin.service
 [Install]
 WantedBy=timers.target
 __U__
+curl -fsSL "https://raw.githubusercontent.com/himk9094-png/hwandong-quant/main/server/toss.py?t=$(date +%s)" -o "$D/toss.py" \
+  && chmod 700 "$D/toss.py" || echo "(toss.py download failed - run: hq update)"
+cat > /etc/systemd/system/hq-toss.service <<'__U__'
+[Unit]
+Description=hwandong-quant: Toss +20% take-profit conditional orders sync
+Wants=network-online.target
+After=network-online.target
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/hq/toss.py tp --quiet
+TimeoutStartSec=300
+__U__
+cat > /etc/systemd/system/hq-toss.timer <<'__U__'
+[Unit]
+Description=hwandong-quant Toss take-profit sync (Mon-Fri 08:20 and 15:45 KST)
+[Timer]
+OnCalendar=Mon..Fri *-*-* 08:20:00 Asia/Seoul
+OnCalendar=Mon..Fri *-*-* 15:45:00 Asia/Seoul
+[Install]
+WantedBy=timers.target
+__U__
 cat > /etc/systemd/system/hq-dartbulk.service <<'__U__'
 [Unit]
 Description=hwandong-quant: DART bulk files -> GitHub release
@@ -268,7 +290,7 @@ Persistent=true
 WantedBy=timers.target
 __U__
 systemctl daemon-reload
-systemctl enable --now hq-daily.timer hq-coin.timer hq-dartbulk.timer >/dev/null
+systemctl enable --now hq-daily.timer hq-coin.timer hq-dartbulk.timer hq-toss.timer >/dev/null
 
 if [ ! -s "$D/token" ]; then hq token || true; else echo "Keeping saved token (change: hq token)"; fi
 echo
@@ -279,4 +301,5 @@ Done. Commands:
   hq status      timers + recent runs       hq check     token + timers
   hq token       paste a new token          hq run daily start daily now (test)
   hq dartbulk    DART bulk financial files -> GitHub (background, ~20 min)
+  hq toss key    Toss Open API keys    hq toss check / pick / tp / live / paper
 __MSG__
