@@ -1,0 +1,71 @@
+name: Microcap paper trading
+
+on:
+  schedule:
+    # After the KRX collection job starts at 00:07 KST. The second run also retries notifications.
+    - cron: "37 16,19 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: microcap-paper-trading
+  cancel-in-progress: false
+
+jobs:
+  paper:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/checkout@v5
+        with:
+          ref: data
+          path: store
+      - uses: actions/checkout@v5
+        with:
+          ref: paper-microcap-state
+          path: paper-state
+          sparse-checkout: paper
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install -r requirements.txt 'pyarrow<21'
+      - name: Process confirmed sessions and publish the paper ledger digest
+        env:
+          PAPER_START: "2026-11-23"
+          PAPER_USE_EXISTING_TOPIC: "1"
+        run: |
+          end=$(python - <<'PY'
+          from datetime import datetime, timedelta
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+          import pandas as pd
+          cutoff = (datetime.now(ZoneInfo("Asia/Seoul")).date() - timedelta(days=1)).strftime("%Y%m%d")
+          dates = pd.read_parquet(sorted(Path("store/krx").glob("*.parquet"))[-1], columns=["date"])["date"].astype(str)
+          dates = dates[dates <= cutoff]
+          if not dates.empty:
+              print(pd.to_datetime(dates.max(), format="%Y%m%d").date().isoformat())
+          PY
+          )
+          if [[ -z "$end" || "$end" < "$PAPER_START" ]]; then
+            echo "Waiting for the first confirmed KRX session."
+            exit 0
+          fi
+
+          state=paper-state/paper/microcap.json
+          git -C paper-state config user.name "github-actions[bot]"
+          git -C paper-state config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          save_state() {
+            git -C paper-state add paper/microcap.json
+            if ! git -C paper-state diff --cached --quiet; then
+              git -C paper-state commit -qm "$1"
+              git -C paper-state push -q origin HEAD:paper-microcap-state
+            fi
+          }
+          python -m backtest.ntfy_microcap_paper --state "$state" --from-date "$PAPER_START" --as-of "$end"
+          save_state "Track virtual microcap fills for $end"
+          python -m backtest.ntfy_microcap_paper --state "$state" --from-date "$PAPER_START" --as-of "$end" --publish
+          save_state "Record ntfy receipt for $end"
