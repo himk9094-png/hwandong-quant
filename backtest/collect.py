@@ -77,7 +77,9 @@ def krx():
     empty_p = KRX_DIR / "holidays.json"
     holidays = set(json.loads(empty_p.read_text())) if empty_p.exists() else set()
     end = today_kst() - dt.timedelta(days=1)
-    recent = (today_kst() - dt.timedelta(days=1)).strftime("%Y%m%d")
+    # 빈 날을 휴장일로 확정하는 건 7일 지난 뒤에만: KRX가 금요일 시세를 월요일에야 올리는 등 늦게 올라오는 날이 있어서
+    # (어제 기준으로 확정했다가 11/16·11/20 거래일이 휴장일로 잘못 기록돼 그날 시세가 빠졌음)
+    settled = (today_kst() - dt.timedelta(days=7)).strftime("%Y%m%d")
     for year in range(START.year, end.year + 1):
         p = KRX_DIR / f"{year}.parquet"
         old = pd.read_parquet(p) if p.exists() else None
@@ -97,7 +99,7 @@ def krx():
         with ThreadPoolExecutor(4) as ex:
             for ymd, rows in ex.map(one, days):
                 if not rows:
-                    if ymd < recent:            # 어제 시세는 KRX가 아침에야 올림 → 비었다고 휴장일로 적지 않음
+                    if ymd < settled:           # 최근 7일은 비어 있어도 휴장일로 적지 않고 다음 날 다시 받아 봄
                         holidays.add(ymd)
                     continue
                 df = pd.DataFrame(rows)
