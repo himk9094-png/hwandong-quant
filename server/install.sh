@@ -270,6 +270,25 @@ OnCalendar=Mon..Fri *-*-* 15:45:00 Asia/Seoul
 [Install]
 WantedBy=timers.target
 __U__
+cat > /etc/systemd/system/hq-tossbuy.service <<'__U__'
+[Unit]
+Description=hwandong-quant: money from sold quant stocks -> buy Super Quality at the open
+Wants=network-online.target
+After=network-online.target
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/hq/toss.py buy --quiet
+TimeoutStartSec=300
+__U__
+cat > /etc/systemd/system/hq-tossbuy.timer <<'__U__'
+[Unit]
+Description=hwandong-quant Toss rotation buy (Mon-Fri 08:35 KST, opening auction)
+[Timer]
+OnCalendar=Mon..Fri *-*-* 08:35:00 Asia/Seoul
+AccuracySec=5s
+[Install]
+WantedBy=timers.target
+__U__
 cat > /etc/systemd/system/hq-dartbulk.service <<'__U__'
 [Unit]
 Description=hwandong-quant: DART bulk files -> GitHub release
@@ -290,7 +309,7 @@ Persistent=true
 WantedBy=timers.target
 __U__
 systemctl daemon-reload
-systemctl enable --now hq-daily.timer hq-coin.timer hq-dartbulk.timer hq-toss.timer >/dev/null
+systemctl enable --now hq-daily.timer hq-coin.timer hq-dartbulk.timer hq-toss.timer hq-tossbuy.timer >/dev/null
 
 if [ ! -s "$D/token" ]; then hq token || true; else echo "Keeping saved token (change: hq token)"; fi
 echo
@@ -302,4 +321,5 @@ Done. Commands:
   hq token       paste a new token          hq run daily start daily now (test)
   hq dartbulk    DART bulk financial files -> GitHub (background, ~20 min)
   hq toss key    Toss Open API keys    hq toss check / pick / tp / live / paper
+  hq toss plan   what the 08:35 rotation would buy      hq toss buy --force   run it now
 __MSG__

@@ -12,6 +12,16 @@ only creates / fixes / cancels those orders once a day. Other stocks are never t
   hq toss list     registered quant stocks
   hq toss tp       sync +20% take-profit orders (paper mode only prints)
   hq toss live     really send orders     hq toss paper   print only (default)
+  hq toss buy      morning rotation: money from SOLD quant stocks -> buy Super Quality stocks
+                   (Mon-Fri 08:35 by timer; opening auction LIMIT order at prev close +3%)
+  hq toss plan     show budget, slot size and the next Super Quality stocks to buy
+  hq toss autobuy on|off   turn the morning rotation on/off (default on)
+  hq toss refill on|off    Super Quality take-profit money: buy next stock now (on) / wait (off, default)
+
+Rotation rules: only money from selling REGISTERED quant stocks is used (US ETFs, other
+stocks and your other cash are never touched). Money from old quant stocks buys the next
+Super Quality stocks you don't hold (up to 20, equal size). Money from a Super Quality
+stock's take-profit waits for the next quarterly rebalance (refill=false).
 
 Terminal messages are English because the Lightsail browser terminal shows Korean as boxes.
 """
@@ -48,7 +58,10 @@ socket.getaddrinfo = _v4
 
 # ------------------------------------------------------------------ config / log
 def cfg() -> dict:
-    c = {"mode": "paper", "tp": 0.20, "symbols": [], "expire_days": 180, "account": None}
+    c = {"mode": "paper", "tp": 0.20, "symbols": [], "expire_days": 180, "account": None,
+         # rotation (hq toss buy)
+         "buy": True, "n": 20, "list": "S/6/1", "buy_up": 0.03, "refill": False,
+         "budget": 0.0, "sq": [], "sold": {}, "pending": {}, "snap": {}, "snap_at": None, "seen": []}
     try:
         c.update(json.load(open(CFG)))
     except FileNotFoundError:
@@ -73,6 +86,9 @@ def log(msg: str):
 
 
 def notify(title: str, body: str):
+    if os.environ.get("HQ_NO_NOTIFY"):
+        print(f"(notify skipped) {title}\n{body}")
+        return
     try:
         raw = urllib.request.urlopen(f"https://raw.githubusercontent.com/{REPO}/main/config.json", timeout=15).read()
         t = json.loads(raw).get("ntfy_topic")
@@ -297,14 +313,18 @@ def cmd_tp(quiet=False):
             sells.setdefault(o["symbol"], []).append(o)
     exp = (dt.date.today() + dt.timedelta(days=int(c["expire_days"]))).isoformat()
     done, notes = [], []
-    for sym in c["symbols"]:
+    if live and c.get("buy", True):            # 오늘 체결된 매수 정산 + 팔린 퀀트 종목 대금을 매수 예산에 반영
+        notes += settle_buys(c) + collect(c, hs)
+        save(c)
+    ours = {sym for sym, os_ in sells.items() if any(str(o.get("clientOrderId") or "").startswith(TAG) for o in os_)}
+    for sym in sorted(set(c["symbols"]) | ours):
         h = hs.get(sym)
         mine = [o for o in sells.get(sym, []) if str(o.get("clientOrderId") or "").startswith(TAG)]
         other = [o for o in sells.get(sym, []) if o not in mine]
-        if not h or float(h["quantity"]) <= 0:
+        if sym not in c["symbols"] or not h or float(h["quantity"]) <= 0:
             for o in mine:                         # no longer held -> remove our leftover order
                 act(live, "DELETE", f"/api/v1/conditional-orders/{o['conditionalOrderId']}", None, acct,
-                    f"cancel {sym} (not held)", done)
+                    f"cancel {sym} (not held or not a quant stock any more)", done)
             continue
         if other:
             notes.append(f"{sym}: you already have your own sell conditional order -> left as is")
@@ -342,6 +362,235 @@ def act(live, method, path, body, acct, label, done):
         done.append(f"FAILED {label}: HTTP {code} {json.dumps(j)[:200]}")
 
 
+# ------------------------------------------------------------------ rotation: sold quant stocks -> Super Quality buys
+SITE = os.environ.get("HQ_SITE", "https://himk9094-png.github.io/hwandong-quant")
+BTAG = "hqb"                       # clientOrderId prefix: buys made by this script
+KST = dt.timezone(dt.timedelta(hours=9))
+MIN_ORDER = 30000                  # 원. 이보다 작은 돈으로는 사지 않음
+OPEN_ST = ("PENDING", "PENDING_CANCEL", "PENDING_REPLACE", "PARTIAL_FILLED")
+
+
+def now_kst() -> dt.datetime:
+    return dt.datetime.now(KST)
+
+
+def num(x) -> float:
+    try:
+        return float(x)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def when(s):
+    try:
+        t = dt.datetime.fromisoformat(str(s).replace("Z", "+00:00"))
+        return t if t.tzinfo else t.replace(tzinfo=KST)
+    except ValueError:
+        return None
+
+
+def market_open_today() -> bool:
+    today = f"{now_kst():%Y-%m-%d}"
+    code, j = call("GET", "/api/v1/market-calendar/KR", params={"date": today})
+    if code != 200:
+        log(f"(market calendar failed HTTP {code}) -> no buying today")
+        return False
+    t = (j.get("result") or {}).get("today") or {}
+    return t.get("date") == today and t.get("integrated") is not None
+
+
+def sq_list(c):
+    """환동퀀트 슈퍼퀄리티 목록(순위순)과 종목 이름."""
+    band, strat, risk = str(c.get("list") or "S/6/1").split("/")
+    raw = urllib.request.urlopen(f"{SITE}/smallcap.json?t={int(time.time())}", timeout=30).read()
+    now = json.loads(raw)["now"]
+    names = {k: v.get("n", k) for k, v in (now.get("stocks") or {}).items()}
+    return list(now["lists"][band][strat][risk]), names, now.get("sig", "")
+
+
+def orders(c, status, symbol=None, since=None) -> list | None:
+    out, cur = [], None
+    for _ in range(10):
+        p = {"status": status, "limit": 100}
+        if symbol:
+            p["symbol"] = symbol
+        if since:
+            p["from"] = since
+        if cur:
+            p["cursor"] = cur
+        code, j = call("GET", "/api/v1/orders", params=p, acct=account(c))
+        if code != 200:
+            log(f"(orders {status} {symbol or ''} failed HTTP {code})")
+            return None
+        r = j.get("result") or {}
+        out += r.get("orders") or []
+        cur = r.get("nextCursor")
+        if not r.get("hasNext") or not cur:
+            break
+    return out
+
+
+def collect(c, hs) -> list:
+    """지난번 이후 팔린 퀀트 종목의 매도 대금(수수료·세금 뺀 돈)을 매수 예산에 더한다."""
+    notes = []
+    held = {s: int(num(h["quantity"])) for s, h in hs.items()}
+    snap, seen = c.get("snap") or {}, set(c.get("seen") or [])
+    t0 = when(c.get("snap_at")) if c.get("snap_at") else None
+    since = f"{now_kst().date() - dt.timedelta(days=14):%Y-%m-%d}"
+    for sym in sorted(set(c["symbols"]) | set(snap)):
+        before, now = int(snap.get(sym, 0)), held.get(sym, 0)
+        if t0 is None or now >= before:
+            continue
+        os_ = orders(c, "CLOSED", sym, since)
+        if os_ is None:
+            notes.append(f"{sym}: sold but order history failed -> will retry next run")
+            continue
+        got = 0.0
+        for o in os_:
+            e = o.get("execution") or {}
+            t = when(o.get("orderedAt"))
+            if o.get("side") != "SELL" or o["orderId"] in seen or num(e.get("filledQuantity")) <= 0 or (t and t < t0):
+                continue
+            seen.add(o["orderId"])
+            got += num(e.get("filledAmount")) - num(e.get("commission")) - num(e.get("tax"))
+        if got <= 0:
+            notes.append(f"{sym}: {before - now} shares gone but no sell fill found -> nothing added")
+        elif sym in c["sq"] and not c.get("refill"):
+            c["sold"][sym] = f"{now_kst():%Y-%m-%d}"
+            notes.append(f"SOLD {sym} (Super Quality take-profit) {got:,.0f} KRW -> waits for next quarterly rebalance")
+        else:
+            c["budget"] = round(num(c["budget"]) + got)
+            notes.append(f"SOLD {sym} -> +{got:,.0f} KRW to buy budget (now {c['budget']:,.0f})")
+        if now == 0:
+            c["symbols"] = [s for s in c["symbols"] if s != sym]
+            c["sq"] = [s for s in c["sq"] if s != sym]
+    c["snap"] = {s: held[s] for s in c["symbols"] if held.get(s, 0) > 0}
+    c["snap_at"] = now_kst().isoformat(timespec="seconds")
+    c["seen"] = sorted(seen)[-500:]
+    return notes
+
+
+def settle_buys(c) -> list:
+    """어제·오늘 낸 매수 주문 결과: 쓴 돈만큼 예산에서 확정하고 안 쓴 돈은 돌려놓는다."""
+    notes = []
+    for oid, p in list((c.get("pending") or {}).items()):
+        code, j = call("GET", f"/api/v1/orders/{oid}", acct=account(c))
+        if code != 200:
+            notes.append(f"{p['sym']}: buy order check failed HTTP {code} -> retry next run")
+            continue
+        o = j.get("result") or {}
+        if o.get("status") in OPEN_ST:
+            continue
+        e = o.get("execution") or {}
+        q = int(num(e.get("filledQuantity")))
+        spent = num(e.get("filledAmount")) + num(e.get("commission"))
+        c["budget"] = round(num(c["budget"]) + p["reserved"] - spent)
+        if q > 0:
+            if p["sym"] not in c["sq"]:
+                c["sq"].append(p["sym"])
+            notes.append(f"BOUGHT {p['sym']} {p.get('name', '')} {q} sh at {num(e.get('averageFilledPrice')):,.0f} ({spent:,.0f} KRW)")
+        else:
+            c["symbols"] = [s for s in c["symbols"] if s != p["sym"]]
+            notes.append(f"{p['sym']} {p.get('name', '')} not filled at the open ({o.get('status')}) -> money back, try again tomorrow")
+        del c["pending"][oid]
+    return notes
+
+
+def plan(c, hs, budget, cash):
+    """살 종목과 금액. (종목, 이름, 수량, 지정가, 금액) 목록과 설명 줄."""
+    lst, names, sig = sq_list(c)
+    pend = {p["sym"] for p in c["pending"].values()}
+    open_buys = {o["symbol"] for o in (orders(c, "OPEN") or []) if o.get("side") == "BUY"}
+    cutoff = f"{now_kst().date() - dt.timedelta(days=90):%Y-%m-%d}"
+    cands = [s for s in lst if s not in hs and s not in pend and s not in open_buys and c["sold"].get(s, "") < cutoff]
+    group = sum(num(hs[s]["lastPrice"]) * num(hs[s]["quantity"]) for s in c["symbols"] if s in hs) + budget
+    slot = group / max(1, int(c["n"]))
+    free = int(c["n"]) - len([s for s in c["sq"] if s in hs]) - len(pend)
+    spend = min(budget, cash)
+    px = {}
+    if cands:
+        code, j = call("GET", "/api/v1/prices", params={"symbols": ",".join(cands[:30])})
+        if code == 200:
+            px = {x["symbol"]: num(x.get("lastPrice")) for x in j.get("result") or []}
+    buys = []
+    for s in cands:
+        if free <= 0 or spend < max(MIN_ORDER, slot * 0.5):
+            break
+        if px.get(s, 0) <= 0:
+            continue
+        lim = up_tick(px[s] * (1 + float(c["buy_up"])))
+        q = int(min(slot, spend) // lim)
+        if q < 1:
+            continue
+        buys.append((s, names.get(s, s), q, lim, q * lim))
+        spend -= q * lim
+        free -= 1
+    head = (f"Super Quality list {c['list']} (signal {sig}) | budget {budget:,.0f} | cash {cash:,.0f} | "
+            f"quant group {group:,.0f} | slot {slot:,.0f} | free slots {int(c['n']) - len([s for s in c['sq'] if s in hs]) - len(pend)}")
+    return buys, head, cands[:10], names
+
+
+def cmd_buy(quiet=False, force=False, show=False):
+    c = cfg()
+    live = c["mode"] == "live"
+    if not c.get("buy", True) and not show:
+        if not quiet:
+            print("autobuy is OFF (turn on: hq toss autobuy on)")
+        return
+    if not show and not force and not market_open_today():
+        if not quiet:
+            print("market closed today -> nothing to do")
+        return
+    acct = account(c)
+    hs = {h["symbol"]: h for h in holdings(c)}
+    notes = []
+    if live and not show:
+        notes += settle_buys(c) + collect(c, hs)
+        save(c)
+    code, j = call("GET", "/api/v1/buying-power", params={"currency": "KRW"}, acct=acct)
+    cash = num((j.get("result") or {}).get("cashBuyingPower")) if code == 200 else 0.0
+    if code != 200:
+        notes.append(f"buying power check failed HTTP {code} -> no buying today")
+    budget = num(c["budget"])
+    buys, head, cands, names = plan(c, hs, budget, cash)
+    if show:
+        print(head)
+        print("next to buy when money comes in (about one slot each):", ", ".join(f"{s} {names.get(s, s)}" for s in cands) or "(none)")
+        for s, n, q, lim, amt in buys:
+            print(f"  would BUY {s} {n} {q} sh, limit {lim:,} (opening auction) = {amt:,.0f} KRW")
+        if not buys:
+            print("  nothing to buy now (buy budget comes only from SOLD quant stocks)")
+        return
+    for s, n, q, lim, amt in buys:
+        label = f"BUY {s} {n} {q} sh, limit {lim:,} at the open = {amt:,.0f} KRW"
+        if not live:
+            notes.append("would " + label)
+            continue
+        body = {"clientOrderId": f"{BTAG}{s}{now_kst():%y%m%d}"[:36], "symbol": s, "side": "BUY",
+                "orderType": "LIMIT", "timeInForce": "OPG", "quantity": str(q), "price": str(lim)}
+        code, j = call("POST", "/api/v1/orders", body=body, acct=acct)
+        oid = (j.get("result") or {}).get("orderId") if code in (200, 201) else None
+        if not oid:
+            notes.append(f"FAILED {label}: HTTP {code} {json.dumps(j)[:200]}")
+            continue
+        c["pending"][oid] = {"sym": s, "name": n, "reserved": amt, "at": now_kst().isoformat(timespec="seconds")}
+        c["budget"] = round(num(c["budget"]) - amt)
+        if s not in c["symbols"]:
+            c["symbols"] = sorted(set(c["symbols"]) | {s})   # 체결되면 15:45에 +20% 익절 주문이 붙음
+        notes.append("sent " + label)
+        save(c)
+        time.sleep(0.3)
+    if live:
+        save(c)
+    head2 = "LIVE" if live else "PAPER (nothing sent)"
+    if notes:
+        msg = "\n".join(notes) + f"\nbudget left {num(c['budget']):,.0f} KRW"
+        log(f"[{head2} buy]\n{msg}")
+        notify(f"토스 자동 매수 {'실행' if live else '모의'}", msg)
+    elif not quiet:
+        print(f"[{head2}] {head}\nnothing to buy")
+
+
 def main():
     a = sys.argv[1:] or ["check"]
     c = cfg()
@@ -359,6 +608,18 @@ def main():
         c["mode"] = a[0]
         save(c)
         print("mode ->", a[0].upper(), "(live = real orders)" if a[0] == "live" else "(prints only)")
+    elif a[0] == "buy":
+        cmd_buy(quiet="--quiet" in a, force="--force" in a)
+    elif a[0] == "plan":
+        cmd_buy(show=True)
+    elif a[0] == "autobuy" and len(a) > 1 and a[1] in ("on", "off"):
+        c["buy"] = a[1] == "on"
+        save(c)
+        print("autobuy ->", a[1].upper())
+    elif a[0] == "refill" and len(a) > 1 and a[1] in ("on", "off"):
+        c["refill"] = a[1] == "on"
+        save(c)
+        print("refill ->", a[1].upper(), "(Super Quality take-profit money", "buys the next stock right away)" if a[1] == "on" else "waits for the next quarterly rebalance)")
     elif a[0] == "log":
         os.system(f"tail -n 40 {LOG}")
     else:
