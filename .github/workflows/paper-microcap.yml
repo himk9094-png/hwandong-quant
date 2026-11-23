@@ -5,6 +5,9 @@ on:
     # After the KRX collection job starts at 00:07 KST. The second run also retries notifications.
     - cron: "37 16,19 * * 1-5"
   workflow_dispatch:
+  workflow_run:             # 시세 수집(collect)이 끝나면 바로 — 아침 수집으로 전 거래일 체결을 그날 아침에 기록
+    workflows: ["collect"]
+    types: [completed]
 
 permissions:
   contents: write

@@ -5,6 +5,7 @@ name: collect
 on:
   schedule:
     - cron: "7 15 * * *"     # 한국시간 00:07 — DART는 한국 낮엔 느리고 밤엔 빠름, 하루 한도도 자정에 초기화
+    - cron: "17 23 * * 0-4"  # 한국시간 평일 08:17 — KRX는 전 거래일 시세를 아침 8시에 올림 → 시세(krx)만 바로 받기
   workflow_dispatch:
     inputs:
       steps:
@@ -42,7 +43,7 @@ jobs:
           FIN_Q: "0.30"          # 재무 API는 소형주만(실제 공시일 확보용). 나머지 종목은 DART 일괄 파일(bulk)이 채움
           KRX_API_KEY: ${{ secrets.KRX_API_KEY }}
           DART_API_KEY: ${{ secrets.DART_API_KEY }}
-          STEPS: ${{ github.event.inputs.steps || 'krx multi fin disc' }}
+          STEPS: ${{ github.event.inputs.steps || (github.event.schedule == '17 23 * * 0-4' && 'krx' || 'krx multi fin disc') }}
           DART_THREADS: ${{ github.event.inputs.threads || '2' }}
           DART_GAP: "0.1"
         run: |
