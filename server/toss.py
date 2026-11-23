@@ -282,9 +282,11 @@ def cmd_check():
 def cmd_pick():
     c = cfg()
     hs = holdings(c)
+    print("Match with your Toss app by QUANTITY and AVERAGE PRICE (names can't show in this terminal).\n")
     for i, h in enumerate(hs, 1):
         mark = "Q" if h["symbol"] in c["symbols"] else " "
-        print(f" {i:2d} [{mark}] {h['symbol']}  qty {h['quantity']}")
+        print(f" {i:2d} [{mark}] {h['symbol']}  qty {h['quantity']:>6}  avg {float(h['averagePurchasePrice']):>10,.0f}"
+              f"  {float(h['profitLoss']['rate']) * 100:+6.1f}%")
     print("\nType the NUMBERS of your quant stocks separated by spaces (e.g. 1 3 4 7), then Enter.")
     print("Only these will ever get automatic orders. Empty = keep current list.")
     s = input("> ").strip()
