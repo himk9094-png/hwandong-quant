@@ -117,6 +117,16 @@ def creds():
     return v.get("TOSS_CLIENT_ID"), v.get("TOSS_CLIENT_SECRET")
 
 
+def _text(raw: bytes) -> str:
+    if raw[:2] == b"\x1f\x8b":                      # 토스가 압축(gzip)해서 보낼 때가 있음
+        import gzip
+        try:
+            raw = gzip.decompress(raw)
+        except OSError:
+            pass
+    return raw.decode(errors="replace")
+
+
 def call(method: str, path: str, params=None, body=None, form=None, auth=True, acct=None, retry=3):
     url = API + path + ("?" + urllib.parse.urlencode(params) if params else "")
     h = {"User-Agent": "hq-toss/1.0", "Accept": "application/json"}
@@ -135,10 +145,10 @@ def call(method: str, path: str, params=None, body=None, form=None, auth=True, a
         req = urllib.request.Request(url, data=data, method=method, headers=h)
         try:
             with urllib.request.urlopen(req, timeout=20) as r:
-                txt = r.read().decode() or "{}"
+                txt = _text(r.read()) or "{}"
                 return r.status, json.loads(txt)
         except urllib.error.HTTPError as e:
-            txt = e.read().decode(errors="replace")
+            txt = _text(e.read())
             if e.code == 429 and i < retry - 1:
                 time.sleep(float(e.headers.get("Retry-After") or 1.5))
                 continue
