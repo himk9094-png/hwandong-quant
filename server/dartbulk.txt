@@ -1,3 +1,3 @@
-dartbulk 2026-11-18 00:07:00 KST
+dartbulk 2026-11-23 23:30:06 KST
 files on DART (BS/PL/CF): 132
-done 2026-11-18 00:15:50: uploaded 132, already there 0, failed 0
+done 2026-11-23 23:31:20: uploaded 18, already there 114, failed 0
