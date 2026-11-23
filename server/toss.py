@@ -203,7 +203,8 @@ def holdings(c) -> list:
     code, j = call("GET", "/api/v1/holdings", acct=account(c))
     if code != 200:
         die(code, j, "holdings")
-    return [x for x in j.get("result", {}).get("items", []) if x.get("marketCountry", "KR") == "KR"]
+    # 국내 주식만: 시장이 KR로 명시되고 원화인 것. 해외(US)·표시 없는 건 절대 포함 안 함
+    return [x for x in j.get("result", {}).get("items", []) if x.get("marketCountry") == "KR" and x.get("currency", "KRW") == "KRW"]
 
 
 def open_conds(c) -> list:
