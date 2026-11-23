@@ -19,6 +19,9 @@ only creates / fixes / cancels those orders once a day. Other stocks are never t
   hq toss autobuy on|off   turn the morning rotation on/off (default on)
   hq toss refill on|off    Super Quality take-profit money: buy next stock now (on) / wait (off, default)
 
+Your own stocks (anything this bot did not buy) only ever get the +20% take-profit order:
+they are never swapped out at a quarterly rebalance. Quarterly swaps (not built yet) may
+only touch stocks this bot bought (the "sq" list).
 Rotation rules: only money from selling REGISTERED quant stocks is used (US ETFs, other
 stocks and your other cash are never touched). Money from old quant stocks buys the next
 Super Quality stocks you don't hold (up to 20, equal size). Money from a Super Quality
