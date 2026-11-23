@@ -9,6 +9,7 @@ only creates / fixes / cancels those orders once a day. Other stocks are never t
   hq toss key      paste client_id / client_secret (hidden)
   hq toss check    token, account, holdings, open conditional orders
   hq toss pick     choose which holdings are quant stocks (by number)
+  hq toss pick all treat EVERY domestic (KR) stock as a quant stock, now and later (US stocks never)
   hq toss list     registered quant stocks
   hq toss tp       sync +20% take-profit orders (paper mode only prints)
   hq toss live     really send orders     hq toss paper   print only (default)
@@ -58,7 +59,7 @@ socket.getaddrinfo = _v4
 
 # ------------------------------------------------------------------ config / log
 def cfg() -> dict:
-    c = {"mode": "paper", "tp": 0.20, "symbols": [], "expire_days": 180, "account": None,
+    c = {"mode": "paper", "tp": 0.20, "symbols": [], "expire_days": 180, "account": None, "all_kr": False,
          # rotation (hq toss buy)
          "buy": True, "n": 20, "list": "S/6/1", "buy_up": 0.03, "refill": False,
          "budget": 0.0, "sq": [], "sold": {}, "pending": {}, "snap": {}, "snap_at": None, "seen": []}
@@ -307,6 +308,7 @@ def cmd_tp(quiet=False):
     tp, live = float(c["tp"]), c["mode"] == "live"
     acct = account(c)
     hs = {h["symbol"]: h for h in holdings(c)}
+    all_kr(c, hs)
     co = open_conds(c)
     sells = {}
     for o in co:
@@ -370,6 +372,12 @@ BTAG = "hqb"                       # clientOrderId prefix: buys made by this scr
 KST = dt.timezone(dt.timedelta(hours=9))
 MIN_ORDER = 30000                  # 원. 이보다 작은 돈으로는 사지 않음
 OPEN_ST = ("PENDING", "PENDING_CANCEL", "PENDING_REPLACE", "PARTIAL_FILLED")
+
+
+def all_kr(c, hs):
+    """'국내 전부 관리'면 지금 가진 국내 종목을 모두 퀀트 종목으로 (holdings()는 국내만 돌려줌)."""
+    if c.get("all_kr"):
+        c["symbols"] = sorted(set(c["symbols"]) | set(hs))
 
 
 def now_kst() -> dt.datetime:
@@ -545,6 +553,7 @@ def cmd_buy(quiet=False, force=False, show=False):
         return
     acct = account(c)
     hs = {h["symbol"]: h for h in holdings(c)}
+    all_kr(c, hs)
     notes = []
     if live and not show:
         notes += settle_buys(c) + collect(c, hs)
@@ -600,10 +609,19 @@ def main():
         cmd_key()
     elif a[0] == "check":
         cmd_check()
+    elif a[0] == "pick" and len(a) > 1 and a[1] == "all":
+        hs = holdings(c)
+        c["all_kr"] = True
+        c["symbols"] = sorted({h["symbol"] for h in hs})
+        save(c)
+        print(f"ALL domestic stocks are quant stocks now ({len(hs)}): " + " ".join(c["symbols"]))
+        print("Stocks you buy later are added automatically. US stocks are never touched. Undo: hq toss pick")
     elif a[0] == "pick":
+        c["all_kr"] = False
+        save(c)
         cmd_pick()
     elif a[0] == "list":
-        print("quant stocks:", " ".join(c["symbols"]) or "(none)", "| mode:", c["mode"], "| tp:", c["tp"])
+        print("quant stocks:", "ALL domestic" if c.get("all_kr") else "", " ".join(c["symbols"]) or "(none)", "| mode:", c["mode"], "| tp:", c["tp"])
     elif a[0] == "tp":
         cmd_tp(quiet="--quiet" in a)
     elif a[0] in ("live", "paper"):
