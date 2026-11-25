@@ -143,6 +143,7 @@ def snapshot(m, F, j: int, trade_i: int | None, ev: pd.DataFrame, last: int, str
     dates = m["dates"]
     X0 = S.factors(m, F, j, trade_ok=None if trade_i is None else m["alive"].iloc[trade_i], risk=False)
     X1 = S.factors(m, F, j, trade_ok=None if trade_i is None else m["alive"].iloc[trade_i], risk=True)
+    bases = [S.factors(m, F, j, trade_ok=None, risk=bool(rk)) for rk in RISKS] if trade_i is not None else [X0, X1]
     state_day = j + 1
     red = pd.Series(m["listing_state"][state_day], index=m["codes"])
     for strat in strats:
@@ -150,7 +151,7 @@ def snapshot(m, F, j: int, trade_i: int | None, ev: pd.DataFrame, last: int, str
         for rk, X in ((0, X0), (1, X1)):
             ranks = S.score(X, strat).dropna().sort_values() if X is not None else pd.Series(dtype=float)
             lists[str(strat)][str(rk)] = list(ranks.index[:TOPN])
-            base = S.factors(m, F, j, trade_ok=None, risk=bool(rk)) if trade_i is not None else X
+            base = bases[rk]
             if base is not None:
                 clean = base.loc[red.reindex(base.index).eq(0)]
                 clean_ranks = S.score(clean, strat).dropna().sort_values()
@@ -164,7 +165,9 @@ def snapshot(m, F, j: int, trade_i: int | None, ev: pd.DataFrame, last: int, str
     lastev = evj.drop_duplicates("stock", keep="last").set_index("stock")
     per = F["period"].iloc[j]
     cum = m["cumidx"]
-    full = S.factors(m, F, j, trade_ok=None, risk=False)
+    frames = [frame for frame in [X0, X1, *bases] if frame is not None]
+    full = pd.concat(frames) if frames else pd.DataFrame()
+    full = full.loc[~full.index.duplicated()]
     for c in codes:
         x = full.loc[c]
         rk = lastev.loc[c] if c in lastev.index else None
