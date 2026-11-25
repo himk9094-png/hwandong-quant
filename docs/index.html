@@ -331,7 +331,11 @@ function showInfo(){
   B.appendChild(el("p","desc","모든 점수는 과거 데이터로 계산한 참고 지표이며 매수·매도 권유가 아닙니다. 전략 효과는 '성과' 탭에서 확인하세요."));
   show();
 }
-function goTab(k){var t=TABS.find(function(x){return x.k===k});if(!t)return;tab=k;shown=50;Array.prototype.forEach.call($("#tabs").children,function(x){var on=x.textContent===t.l;x.classList.toggle("on",on);if(on)x.scrollIntoView({inline:"center",block:"nearest"})});render();window.scrollTo(0,0)}
+function rememberTab(k){
+  var hash={small:"#small",coin:"#coin",hold:"#hold"}[k]||"";
+  if(location.hash!==hash)history.replaceState(history.state,"",location.pathname+location.search+hash);
+}
+function goTab(k){var t=TABS.find(function(x){return x.k===k});if(!t)return;tab=k;rememberTab(k);shown=50;Array.prototype.forEach.call($("#tabs").children,function(x){var on=x.textContent===t.l;x.classList.toggle("on",on);if(on)x.scrollIntoView({inline:"center",block:"nearest"})});render();window.scrollTo(0,0)}
 function goPf(){goTab("pf")}
 window.HQ={sig:function(){return sigOnly},filt:function(){return {mkt:$("#fMkt").value,cap:$("#fCap").value,tv:$("#fTv").value||"0",
   label:[$("#fMkt"),$("#fCap"),$("#fTv")].filter(function(x){return x.value&&x.value!=="0"}).map(function(x){return x.options[x.selectedIndex].text}).join("·")}},el:el,num:num,cls:cls,$:$,F:F,BY:function(){return BY},meta:function(){return D&&D.meta},show:show,closeSheet:closeSheet,openSheet:openSheet,render:render,goPf:goPf,goTab:goTab};
@@ -342,19 +346,21 @@ function init(data){
   var bn=$("#banner");bn.innerHTML="";
   if(data.meta.sample){bn.appendChild(el("div","banner","샘플 데이터입니다 (가짜 종목·가짜 숫자). 실제 데이터는 설치 후 매일 자동으로 갱신됩니다."))}
   else{var age=(Date.now()-new Date(data.meta.asof+"T15:30:00+09:00"))/864e5;if(age>4)bn.appendChild(el("div","banner","데이터가 "+Math.floor(age)+"일 전 기준입니다. GitHub Actions 실행 기록을 확인하세요."))}
-  var T=$("#tabs");TABS.forEach(function(t){var b=el("button","tab"+(t.k===tab?" on":""),t.l);b.onclick=function(){if(t.k==="coin"&&window.CO)window.CO.home();tab=t.k;shown=50;Array.prototype.forEach.call(T.children,function(x){x.classList.remove("on")});b.classList.add("on");render();window.scrollTo(0,0)};T.appendChild(b)});
+  var T=$("#tabs");TABS.forEach(function(t){var b=el("button","tab"+(t.k===tab?" on":""),t.l);b.onclick=function(){if(t.k==="coin"&&window.CO)window.CO.home();tab=t.k;rememberTab(t.k);shown=50;Array.prototype.forEach.call(T.children,function(x){x.classList.remove("on")});b.classList.add("on");render();window.scrollTo(0,0)};T.appendChild(b)});
   ["#fMkt","#fCap","#fTv"].forEach(function(s){$(s).onchange=function(){shown=50;render()}});
   $("#fSig").onclick=function(){sigOnly=!sigOnly;this.classList.toggle("on",sigOnly);this.setAttribute("aria-pressed",String(sigOnly));shown=50;render()};
   $("#veil").onclick=closeSheet;$("#close").onclick=closeSheet;$("#info").onclick=showInfo;
   render();
 }
+document.addEventListener("DOMContentLoaded",function(){
 if(window.__DATA__)init(window.__DATA__);
 else fetch("data/latest.json?t="+Date.now()).then(function(r){if(!r.ok)throw new Error(r.status);return r.json()}).then(init).catch(function(e){$("#asof").textContent="";$("#list").appendChild(el("div","empty","데이터를 불러오지 못했습니다 ("+e.message+"). 첫 자동 실행이 끝났는지 확인하세요."))});
+});
 })();
 </script>
 <script src="pf.js"></script>
 <script src="hold.js"></script>
-<script src="smallcap.js"></script>
+<script src="smallcap.js?v=8551b03"></script>
 <script src="tabperf.js"></script>
 <script src="coin-engine.js"></script>
 <script src="coin.js"></script>
