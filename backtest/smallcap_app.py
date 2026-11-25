@@ -76,34 +76,52 @@ def band_cfg(b: str):
 
 def run_grid(m, F, b: str):
     strats, freqs = band_cfg(b)
+    rows = []
+    ns, risks = NS, RISKS
+    # 각 신호일의 순위는 종목 수와 익절률에 공통이다.
+    rankings = {}
+    for f in freqs:
+        for i in S.reb_days(m["dates"], f):
+            for rk in risks:
+                if (i, rk) in rankings:
+                    continue
+                X = S.factors(m, F, i - 1, trade_ok=m["alive"].iloc[i], risk=bool(rk))
+                rankings[i, rk] = {s: list(S.score(X, s).dropna().sort_values().index[:max(ns)])
+                                   if X is not None else [] for s in strats}
+    for tp in (0, 10, 20, 30):
+        rows.extend(run_threshold(m, F, b, strats, freqs, ns, risks, rankings, tp))
+    band_cfg("S")
+    return rows
+
+
+def run_threshold(m, F, b, strats, freqs, ns, risks, rankings, tp):
     rows, curves = [], {}
     for s in strats:
         for f in freqs:
-            for n in NS:
-                for rk in RISKS:
-                    S.RISK_FILTER = bool(rk)
-                    r = S.simulate(m, F, s, f, n)
+            for n in ns:
+                for rk in risks:
+                    targets = {i: ranks[s] for (i, risk), ranks in rankings.items() if risk == rk}
+                    r = S.simulate(m, F, s, f, n, close_tp=tp / 100, targets=targets)
                     e = r.pop("curve")
                     curves[(s, f, n, rk)] = e
-                    rows.append({"b": b, "s": s, "f": f, "n": n, "r": rk, "cagr": r1(r["cagr"] * 100), "mdd": r1(r["mdd"] * 100, 0),
+                    rows.append({"b": b, "tp": tp, "s": s, "f": f, "n": n, "r": rk, "cagr": r1(r["cagr"] * 100), "mdd": r1(r["mdd"] * 100, 0),
                                  "to": r1(r["turnover"]), "cost": r1(r["cost"] * 100), "hold": r1(r["hold"]), "y": r["yearly"], "_e": e})
                     log(f"[{b}] {S.NAMES[s]:10s} {f} {n:2d} {'🟡제외' if rk else '      '}: 연 {r['cagr']*100:5.1f}% 낙폭 {r['mdd']*100:4.0f}% · 26년 {r['yearly'].get('2026', 0):+.0f}%")
     S.RISK_FILTER = False
     # 7전략 동일비중: 처음에 7등분해서 각자 굴림(전략 사이 재조정 없음) → 곡선 평균
     for f in freqs:
-        for n in NS:
-            for rk in RISKS:
+        for n in ns:
+            for rk in risks:
                 e = pd.concat([curves[(s, f, n, rk)] for s in COMBO], axis=1).ffill().mean(axis=1)
                 yrs = (e.index[-1] - e.index[0]).days / 365.25
                 ye = e.resample("YE").last()
                 yearly = ye.pct_change()
                 yearly.iloc[0] = ye.iloc[0] - 1
                 sub = [x for x in rows if x["f"] == f and x["n"] == n and x["r"] == rk and x["s"] in COMBO]
-                rows.append({"b": b, "s": 99, "f": f, "n": n, "r": rk, "cagr": r1((e.iloc[-1] ** (1 / yrs) - 1) * 100),
+                rows.append({"b": b, "tp": tp, "s": 99, "f": f, "n": n, "r": rk, "cagr": r1((e.iloc[-1] ** (1 / yrs) - 1) * 100),
                              "mdd": r1((e / e.cummax() - 1).min() * 100, 0), "to": r1(np.mean([x["to"] for x in sub])),
                              "cost": r1(np.mean([x["cost"] for x in sub])), "hold": None,
                              "y": {str(k.year): round(float(v) * 100, 1) for k, v in yearly.items()}, "_e": e})
-    band_cfg("S")
     return rows
 
 
