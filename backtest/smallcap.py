@@ -379,7 +379,7 @@ def reb_days(dates, freq):
     return idx
 
 
-def simulate(m, F, strat, freq, n, cost=True, *, close_tp=0, targets=None):
+def simulate(m, F, strat, freq, n, cost=True, *, close_tp=0, targets=None, red=False):
     dates = m["dates"]
     rd = reb_days(dates, freq)
     if not rd:
@@ -396,6 +396,8 @@ def simulate(m, F, strat, freq, n, cost=True, *, close_tp=0, targets=None):
     lro = m["lro"].values if hro is not None and RB else None
     watch = {}                 # 익절한 종목 → [판 가격 대비 배수, 판 돈]
     nrb = 0
+    restricted = m["listing_state"] if red else None
+    tradable = m["tradable"] if red else None
     pending_exit = set()
     ntp = 0
     cash = 1.0
@@ -417,10 +419,12 @@ def simulate(m, F, strat, freq, n, cost=True, *, close_tp=0, targets=None):
             k = col[c]
             if alive[i, k] and not np.isnan(gap[i, k]):
                 watch[c][0] *= 1 + gap[i, k]
+        if red:
+            pending_exit.update(c for c in w if restricted[i, col[c]])
         exited_today = set()
         for c in tuple(pending_exit):
             k = col[c]
-            if not alive[i, k] or np.isnan(intra[i, k]):
+            if not alive[i, k] or np.isnan(intra[i, k]) or (red and not tradable[i, k]):
                 continue
             equity = cash + sum(w.values())
             value = w.pop(c)
@@ -439,16 +443,33 @@ def simulate(m, F, strat, freq, n, cost=True, *, close_tp=0, targets=None):
             tgt = targets[i][:n] if targets is not None else picks(m, F, i, strat, n)
             total = cash + sum(w.values())
             tw = {c: total / len(tgt) for c in tgt} if tgt else {}
+            if red:
+                frozen = {c for c in w if not tradable[i, col[c]]}
+                pending_exit.update(frozen.difference(tgt))
+                available = total - sum(w[c] for c in frozen)
+                tw = {c: available / n for c in tgt if tradable[i, col[c]]}
+                tw.update({c:w[c] for c in frozen})
             for c in exited_today:
                 tw.pop(c, None)  # 매도한 몫은 현금으로 보유
             for c in pending_exit:
                 tw[c] = w[c]
-            if pending_exit:
+            if pending_exit and not red:
                 available = total - sum(w[c] for c in pending_exit)
                 wanted = sum(v for c, v in tw.items() if c not in pending_exit)
                 if wanted > available and wanted > 0:
                     tw.update({c: v * available / wanted for c, v in tw.items() if c not in pending_exit})
             tax = sell_tax(d)
+            if red and cost:
+                # Reserve the actual fees before sizing buys; frozen shares cannot fund them.
+                sells = sum(max(0, v - tw.get(c, 0)) for c,v in w.items())
+                purchases = sum(max(0, v - w.get(c, 0)) for c,v in tw.items())
+                available = cash + sells * (1 - COMM - SLIP - tax)
+                if purchases:
+                    scale = min(1, max(0, available) / (purchases * (1 + COMM + SLIP)))
+                    for c in tw:
+                        cur = w.get(c, 0)
+                        if tw[c] > cur:
+                            tw[c] = cur + (tw[c] - cur) * scale
             tr0, cp0 = 0.0, 0.0
             for c in set(w) | set(tw):
                 cur, new = w.get(c, 0.0), tw.get(c, 0.0)

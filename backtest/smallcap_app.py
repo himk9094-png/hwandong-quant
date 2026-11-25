@@ -20,6 +20,7 @@ import pandas as pd
 
 from backtest import collect as C
 from backtest import smallcap as S
+from backtest import listing_risk
 
 OUT = C.ROOT / "docs" / "smallcap.json"
 ORDER = [3, 2, 5, 4, 6, 7, 1, 12, 0]          # 화면 순서(이름 있는 7개 → 비교용 2개)
@@ -74,7 +75,7 @@ def band_cfg(b: str):
     return strats, freqs
 
 
-def run_grid(m, F, b: str):
+def run_grid(m, F, b: str, red=False):
     strats, freqs = band_cfg(b)
     rows = []
     ns, risks = NS, RISKS
@@ -85,26 +86,28 @@ def run_grid(m, F, b: str):
             for rk in risks:
                 if (i, rk) in rankings:
                     continue
-                X = S.factors(m, F, i - 1, trade_ok=m["alive"].iloc[i], risk=bool(rk))
+                X = S.factors(m, F, i - 1, trade_ok=None if red else m["alive"].iloc[i], risk=bool(rk))
+                if red and X is not None:
+                    X = X.loc[~pd.Series(m["listing_state"][i].astype(bool), index=m["codes"]).reindex(X.index)]
                 rankings[i, rk] = {s: list(S.score(X, s).dropna().sort_values().index[:max(ns)])
                                    if X is not None else [] for s in strats}
     for tp in (0, 10, 20, 30):
-        rows.extend(run_threshold(m, F, b, strats, freqs, ns, risks, rankings, tp))
+        rows.extend(run_threshold(m, F, b, strats, freqs, ns, risks, rankings, tp, red))
     band_cfg("S")
     return rows
 
 
-def run_threshold(m, F, b, strats, freqs, ns, risks, rankings, tp):
+def run_threshold(m, F, b, strats, freqs, ns, risks, rankings, tp, red):
     rows, curves = [], {}
     for s in strats:
         for f in freqs:
             for n in ns:
                 for rk in risks:
                     targets = {i: ranks[s] for (i, risk), ranks in rankings.items() if risk == rk}
-                    r = S.simulate(m, F, s, f, n, close_tp=tp / 100, targets=targets)
+                    r = S.simulate(m, F, s, f, n, close_tp=tp / 100, targets=targets, red=red)
                     e = r.pop("curve")
                     curves[(s, f, n, rk)] = e
-                    rows.append({"b": b, "tp": tp, "s": s, "f": f, "n": n, "r": rk, "cagr": r1(r["cagr"] * 100), "mdd": r1(r["mdd"] * 100, 0),
+                    rows.append({"b": b, "red": int(red), "tp": tp, "s": s, "f": f, "n": n, "r": rk, "cagr": r1(r["cagr"] * 100), "mdd": r1(r["mdd"] * 100, 0),
                                  "to": r1(r["turnover"]), "cost": r1(r["cost"] * 100), "hold": r1(r["hold"]), "y": r["yearly"], "_e": e})
                     log(f"[{b}] {S.NAMES[s]:10s} {f} {n:2d} {'🟡제외' if rk else '      '}: 연 {r['cagr']*100:5.1f}% 낙폭 {r['mdd']*100:4.0f}% · 26년 {r['yearly'].get('2026', 0):+.0f}%")
     S.RISK_FILTER = False
@@ -118,7 +121,7 @@ def run_threshold(m, F, b, strats, freqs, ns, risks, rankings, tp):
                 yearly = ye.pct_change()
                 yearly.iloc[0] = ye.iloc[0] - 1
                 sub = [x for x in rows if x["f"] == f and x["n"] == n and x["r"] == rk and x["s"] in COMBO]
-                rows.append({"b": b, "tp": tp, "s": 99, "f": f, "n": n, "r": rk, "cagr": r1((e.iloc[-1] ** (1 / yrs) - 1) * 100),
+                rows.append({"b": b, "red": int(red), "tp": tp, "s": 99, "f": f, "n": n, "r": rk, "cagr": r1((e.iloc[-1] ** (1 / yrs) - 1) * 100),
                              "mdd": r1((e / e.cummax() - 1).min() * 100, 0), "to": r1(np.mean([x["to"] for x in sub])),
                              "cost": r1(np.mean([x["cost"] for x in sub])), "hold": None,
                              "y": {str(k.year): round(float(v) * 100, 1) for k, v in yearly.items()}, "_e": e})
@@ -140,9 +143,20 @@ def snapshot(m, F, j: int, trade_i: int | None, ev: pd.DataFrame, last: int, str
     dates = m["dates"]
     X0 = S.factors(m, F, j, trade_ok=None if trade_i is None else m["alive"].iloc[trade_i], risk=False)
     X1 = S.factors(m, F, j, trade_ok=None if trade_i is None else m["alive"].iloc[trade_i], risk=True)
-    for s in strats:
-        lists[str(s)] = {str(rk): list(S.score(X, s).dropna().sort_values().index[:TOPN]) if X is not None else []
-                         for rk, X in ((0, X0), (1, X1))}
+    state_day = j + 1
+    red = pd.Series(m["listing_state"][state_day], index=m["codes"])
+    for strat in strats:
+        lists[str(strat)] = {}
+        for rk, X in ((0, X0), (1, X1)):
+            ranks = S.score(X, strat).dropna().sort_values() if X is not None else pd.Series(dtype=float)
+            lists[str(strat)][str(rk)] = list(ranks.index[:TOPN])
+            base = S.factors(m, F, j, trade_ok=None, risk=bool(rk)) if trade_i is not None else X
+            if base is not None:
+                clean = base.loc[red.reindex(base.index).eq(0)]
+                clean_ranks = S.score(clean, strat).dropna().sort_values()
+                lists[str(strat)][str(rk + 2)] = list(clean_ranks.index[:TOPN])
+            else:
+                lists[str(strat)][str(rk + 2)] = []
     codes = sorted({c for v in lists.values() for L in v.values() for c in L})
     d0 = dates[j]
     lo = dates[max(0, j - 249)]
@@ -150,11 +164,12 @@ def snapshot(m, F, j: int, trade_i: int | None, ev: pd.DataFrame, last: int, str
     lastev = evj.drop_duplicates("stock", keep="last").set_index("stock")
     per = F["period"].iloc[j]
     cum = m["cumidx"]
+    full = S.factors(m, F, j, trade_ok=None, risk=False)
     for c in codes:
-        x = X0.loc[c] if X0 is not None and c in X0.index else X1.loc[c]
+        x = full.loc[c]
         rk = lastev.loc[c] if c in lastev.index else None
         p = per.get(c)
-        o = {"n": str(m["names"].get(c, c)), "cap": r1(x["cap"] / 1e8, 0), "pbr": r1(x["pbr"], 2), "per": r1(x["per"]), "psr": r1(x["psr"], 2),
+        o = {"red": int(red[c]), "n": str(m["names"].get(c, c)), "cap": r1(x["cap"] / 1e8, 0), "pbr": r1(x["pbr"], 2), "per": r1(x["per"]), "psr": r1(x["psr"], 2),
              "pcr": r1(x["pcr"]), "gpa": r1(x["gpa"] * 100 if pd.notna(x["gpa"]) else None), "f": int(x["fscore"]),
              "mom": r1(x["mom"] * 100 if pd.notna(x["mom"]) else None),
              "fin": f"{int(p) // 10} {PERIOD[int(p) % 10]}" if pd.notna(p) else None,
@@ -208,17 +223,20 @@ def main():
     m["cumidx"] = (1 + m["ret"]).cumprod()
     F = S.fundamentals(m)
     m["risk"] = S.risk_matrix(m)
+    m["listing_state"] = listing_risk.build(S.STORE, m["dates"], m["codes"], m["dates"][-1])
+    m["tradable"] = (m["intra"].notna() & m["gap"].notna() & (m["val"] > 0)).to_numpy()
     ev = risk_events()
     dates = m["dates"]
     last = len(dates) - 1
     log(f"시세 {len(dates)}일 · 마지막 {dates[-1]} ({time.time() - t:.0f}초)")
     old = json.loads(OUT.read_text()) if OUT.exists() else {}
-    if a.no_grid and old.get("grid"):
+    if a.no_grid and any(r.get("red") for r in old.get("grid", [])):
         rows, months = old["grid"], old["months"]
     else:
         rows = []
         for b, *_ in BANDS:
-            rows += run_grid(m, F, b)
+            for red in (False, True):
+                rows += run_grid(m, F, b, red)
         months = finish(rows)
     qi = S.reb_days(dates, "Q")[-1]
     snap_q, snap_now = {"lists": {}, "stocks": {}}, {"lists": {}, "stocks": {}}

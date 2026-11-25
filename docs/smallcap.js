@@ -3,16 +3,16 @@
 "use strict";
 var X=window.HQ,el=X.el,num=X.num,cls=X.cls;
 var KEY="hq_small_v1",J=null,loading=false,err=false;
-var st={b:"S",f:"Q",n:20,r:1,s:3,v:"now",tp:0};
+var st={b:"S",f:"Q",n:20,r:1,s:3,v:"now",tp:0,red:1};
 try{var sv=JSON.parse(localStorage.getItem(KEY)||"null");if(sv)Object.keys(st).forEach(function(k){if(sv[k]!=null)st[k]=sv[k]})}catch(e){}
 function keep(){try{localStorage.setItem(KEY,JSON.stringify(st))}catch(e){}}
 var FQ={Q:"분기",M:"매월",W:"매주"};
 function pc(v,sign){return v==null?"–":(sign&&v>0?"+":"")+v.toFixed(1)+"%"}
-function row(s,f,n,r,b){b=b||st.b;for(var i=0;i<J.grid.length;i++){var g=J.grid[i];if((g.b||"S")===b&&g.s===s&&g.f===f&&g.n===n&&g.r===r&&(g.tp||0)===st.tp)return g}return null}
+function row(s,f,n,r,b){b=b||st.b;for(var i=0;i<J.grid.length;i++){var g=J.grid[i];if((g.b||"S")===b&&g.s===s&&g.f===f&&g.n===n&&g.r===r&&(g.red||0)===st.red&&(g.tp||0)===st.tp)return g}return null}
 function nm(s){var x=J.names[String(s)]||String(s);return st.b==="S"?x:x.replace(/^소형주 /,"")}
 function band(){var B=J.bands||[{k:"S",l:"소형주",d:"시가총액 하위 0~20%"}];for(var i=0;i<B.length;i++)if(B[i].k===st.b)return B[i];return B[0]}
 function seg(label,opts,key){
-  var w=el("div","pff");w.appendChild(el("span",null,label));var b=el("div","pfbar");b.style.margin="0";
+  var w=el("div",key==="red"?"pff listing-risk":"pff");w.appendChild(el("span",null,label));var b=el("div","pfbar");b.style.margin="0";
   opts.forEach(function(o){var t=el("button","tgl"+(st[key]===o[0]?" on":""),o[1]);t.type="button";t.setAttribute("aria-pressed",st[key]===o[0]);t.onclick=function(){st[key]=o[0];keep();X.render()};b.appendChild(t)});
   w.appendChild(b);return w;
 }
@@ -59,6 +59,8 @@ function card(c,i,o,snap){
   var b=el("button","card");b.type="button";
   var a=el("div","row1");a.appendChild(el("span","rk",i+1));a.appendChild(el("span","nm",o.n));
   if(o.risk)a.appendChild(el("span","chip","🟡 희석"));
+  if(o.red&1)a.appendChild(el("span","chip listing-risk-badge","🔴 상장폐지 위험"));
+  if(o.red&2)a.appendChild(el("span","chip listing-risk-badge","🔴 거래정지 공시"));
   if(o.halt)a.appendChild(el("span","chip st","거래 없음"));
   a.appendChild(el("span","px",o.px!=null?num(o.px):"–"));
   if(snap==="q"&&o.since!=null)a.appendChild(el("span","chg "+cls(o.since),pc(o.since,true)));
@@ -77,21 +79,25 @@ function draw(L){
   if(J.bands&&!J.bands.some(function(x){return x.k===st.b}))st.b="S";
   if(st.b!=="S"&&st.f==="W")st.f="Q";
   var hasTP=J.grid.some(function(g){return g.tp===10});
+  var hasRed=J.grid.some(function(g){return g.red===1});
+  if(!hasRed)st.red=0;
   if(!hasTP)st.tp=0;
   var ord=J.order,s=st.s;if(ord.indexOf(s)<0||!row(s,st.f,st.n,st.r))s=st.s=3;
   var BD=band(),d=el("p","desc");
-  d.innerHTML="거래 가능한 보통주 중 <b>"+BD.l+"("+BD.d+")</b>에서 고르는 강환국식 팩터 전략. "+(st.b==="S"?"":"<b>강환국 원래 전략은 소형주용</b>이고, 이 구간은 같은 규칙을 적용해 본 비교용입니다. ")+J.start.slice(0,7).replace("-",".")+"~"+J.asof.slice(0,7).replace("-",".")+" 백테스트 · <b>상장폐지 종목 포함</b> · 재무는 공시 다음 날부터 · 전날 종가 신호 → 다음 날 시가 체결 · 수수료+매도세+슬리피지 "+J.slip.toFixed(1)+"% 반영 · 20일 평균 거래대금 "+J.min_val+"억↑. 데이터 "+J.asof+".";
+  d.innerHTML="거래 가능한 보통주 중 <b>"+BD.l+"("+BD.d+")</b>에서 고르는 강환국식 팩터 전략. "+(st.b==="S"?"":"<b>강환국 원래 전략은 소형주용</b>이고, 이 구간은 같은 규칙을 적용해 본 비교용입니다. ")+J.start.slice(0,7).replace("-",".")+"~"+J.asof.slice(0,7).replace("-",".")+" 백테스트 · <b>과거 상장폐지 종목도 분석 대상에 포함</b> · 재무는 공시 다음 날부터 · 전날 종가 신호 → 다음 날 시가 체결 · 수수료+매도세+슬리피지 "+J.slip.toFixed(1)+"% 반영 · 20일 평균 거래대금 "+J.min_val+"억↑. 데이터 "+J.asof+".";
   L.appendChild(d);
   if(J.bands)L.appendChild(seg("대상",J.bands.map(function(x){return [x.k,x.l]}),"b"));
   L.appendChild(seg("리밸런싱",st.b==="S"?[["Q","분기"],["M","매월"],["W","매주"]]:[["Q","분기"],["M","매월"]],"f"));
   L.appendChild(seg("종목 수",[[10,"10"],[20,"20"],[30,"30"]],"n"));
   L.appendChild(seg("🟡 희석 공시 종목",[[1,"빼기"],[0,"포함"]],"r"));
 
+  if(hasRed)L.appendChild(seg("🔴 상장폐지·거래정지 공시",[[1,"빼기"],[0,"포함"]],"red"));
+  if(st.red)L.appendChild(el("p","desc","공시 다음 거래일부터 신규 편입을 막고 보유분은 거래 가능한 첫 시가에 매도합니다. 정지 중인 평가액은 재투자하지 않습니다."));
   if(hasTP)L.appendChild(seg("종목별 익절",[[0,"없음"],[10,"10%"],[20,"20%"],[30,"30%"]],"tp"));
   if(st.tp)L.appendChild(el("p","desc","종가가 평균 매입가보다 "+st.tp+"% 이상 오르면 다음 거래 가능 시가에 전량 매도합니다. 매도 대금은 다음 리밸런싱까지 현금으로 둡니다."));
 
   // 성과 표
-  L.appendChild(el("div","sec",BD.l+" 전략별 성과 · "+FQ[st.f]+" "+st.n+"종목 · 🟡"+(st.r?"빼기":"포함")+(st.tp?" · 익절 "+st.tp+"%":"")));
+  L.appendChild(el("div","sec",BD.l+" 전략별 성과 · "+FQ[st.f]+" "+st.n+"종목 · 🟡"+(st.r?"빼기":"포함")+(hasRed?" · 🔴"+(st.red?"빼기":"포함"):"")+(st.tp?" · 익절 "+st.tp+"%":"")));
   var rows=ord.map(function(k){var g=row(k,st.f,st.n,st.r);if(!g)return null;var y=g.y||{};
     return {key:k,on:k===s,bold:k===99,cells:[nm(k),pc(g.cagr),pc(g.mdd),pc(y["2026"],true),pc(y["2025"],true),pc(g.cost)],cls:{1:cls(g.cagr),3:cls(y["2026"]),4:cls(y["2025"])}}}).filter(Boolean);
   L.appendChild(table(["전략","연수익","최대낙폭","26년","25년","비용/년"],rows,function(k){st.s=k;keep();X.render()}));
@@ -122,11 +128,11 @@ function draw(L){
   // 지금 종목
   if(s===99){L.appendChild(el("div","sec","종목"));L.appendChild(el("p","desc","7전략 동일비중은 위 표에서 1~7번 전략을 하나씩 눌러 각 목록을 보세요(겹치는 종목은 합쳐서 삽니다)."));return}
   var Q=J.q,N=J.now;
-  L.appendChild(el("div","sec","종목 · "+nm(s)+" 상위 "+st.n+(st.r?" (🟡 뺌)":"")));
-  L.appendChild(seg("보기",[["now","다음 교체 후보"],["q",(st.tp?"분기 편입 목록(":"지금 보유(")+Q.date.slice(5).replace("-","/")+" 편입)"]],"v"));
-  var S=st.v==="q"?Q:N,LB=S.lists[st.b]||(st.b==="S"&&S.lists["3"]?S.lists:{}),list=((LB[String(s)]||{})[String(st.r)]||[]).slice(0,st.n);
+  L.appendChild(el("div","sec","종목 · "+nm(s)+" 상위 "+st.n+(st.r?" (🟡 뺌)":"")+(st.red?" (🔴 뺌)":"")));
+  L.appendChild(seg("보기",[["now","다음 교체 후보"],["q",(st.tp||st.red?"분기 선정 목록(":"지금 보유(")+Q.date.slice(5).replace("-","/")+" 편입)"]],"v"));
+  var S=st.v==="q"?Q:N,LB=S.lists[st.b]||(st.b==="S"&&S.lists["3"]?S.lists:{}),list=((LB[String(s)]||{})[String(st.r+2*st.red)]||[]).slice(0,st.n);
   var info=el("p","desc");
-  if(st.v==="q"){info.innerHTML="분기 리밸런싱("+Q.date+" 시가)에 산 종목 · 신호 "+Q.sig+" 종가 · "+Q.basis+" 반영. 오른쪽 % = 편입일 시가 → "+J.asof+" 종가."+(st.tp?" 익절 매도 이력은 이 목록에 반영되지 않습니다.":"")}
+  if(st.v==="q"){info.innerHTML="분기 리밸런싱("+Q.date+" 시가) 편입 대상 · 신호 "+Q.sig+" 종가 · "+Q.basis+" 반영. 오른쪽 % = 편입일 시가 → "+J.asof+" 종가."+(st.tp||st.red?" 이후 매도 이력은 이 선정 목록에 반영되지 않습니다.":"")}
   else{
     var nb=J.next_basis,stale=0;
     if(J.next_fin)list.forEach(function(c){var o=S.stocks[c];if(!o||o.fin!==J.next_fin)stale++});
@@ -139,12 +145,12 @@ function draw(L){
 
   // 주의
   L.appendChild(el("div","sec","주의"));
-  ["과거 성과입니다. 정기 교체 때 거래할 수 없는 종목도 마지막 평가액으로 정리하는 가정이 있어, 특히 초소형주의 수익과 최대낙폭이 달라질 수 있습니다.",
+  [st.red?"거래할 수 없는 보유분은 마지막 가격으로 평가합니다. 거래가 재개될 때까지 실제 회수 금액은 달라질 수 있습니다.":"과거 성과입니다. 정기 교체 때 거래할 수 없는 종목도 마지막 평가액으로 정리하는 가정이 있어, 특히 초소형주의 수익과 최대낙폭이 달라질 수 있습니다.",
    "강환국 책의 연 37~40%는 2004~2016년 결과입니다. 같은 규칙을 2016년 이후에 돌리면 크게 낮아지며, 책 방식(연 1회 7월)은 이 기간에 분기보다 못했습니다.",
    "중소형·중대형·대형·전체 구간에도 같은 선별 규칙을 적용했습니다.",
    "초소형주는 호가가 얇아 시가 체결 가정과 실제 체결가의 차이가 클 수 있습니다.",
    "7전략 동일비중 = 처음에 7등분하고 서로 재조정하지 않음. 수익률 높은 전략에 더 싣는 방식은 결과를 보고 고르는 것이라 뺐습니다.",
-   "🟡 = 최근 1년 안에 유상증자·전환사채·신주인수권부사채·교환사채·감자 결정 공시. 🔴(횡령·불성실공시·감사의견·거래정지)는 공시 수집이 끝나면 추가합니다.",
+   "🟡 = 최근 1년 안에 유상증자·전환사채·신주인수권부사채·교환사채·감자 결정 공시. 🔴 = 거래소 공시 제목에서 확인한 상장폐지·상장적격성 심사 또는 거래정지 위험. 해소·해제 공시를 반영하며 무상증자 등 일시 정지도 포함합니다.",
    "슬리피지 "+J.slip.toFixed(1)+"%(편도)는 가정입니다. 계좌가 크면 소형주 체결 비용이 더 듭니다."].forEach(function(x){L.appendChild(el("p","desc","· "+x))});
   L.appendChild(el("div","small","계산 "+J.made+" · 매일 밤 갱신"));
 }
