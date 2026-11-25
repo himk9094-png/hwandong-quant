@@ -379,7 +379,7 @@ def reb_days(dates, freq):
     return idx
 
 
-def simulate(m, F, strat, freq, n, cost=True):
+def simulate(m, F, strat, freq, n, cost=True, *, close_tp=0, targets=None):
     dates = m["dates"]
     rd = reb_days(dates, freq)
     if not rd:
@@ -396,6 +396,7 @@ def simulate(m, F, strat, freq, n, cost=True):
     lro = m["lro"].values if hro is not None and RB else None
     watch = {}                 # 익절한 종목 → [판 가격 대비 배수, 판 돈]
     nrb = 0
+    pending_exit = set()
     ntp = 0
     cash = 1.0
     eq = []
@@ -416,13 +417,37 @@ def simulate(m, F, strat, freq, n, cost=True):
             k = col[c]
             if alive[i, k] and not np.isnan(gap[i, k]):
                 watch[c][0] *= 1 + gap[i, k]
+        exited_today = set()
+        for c in tuple(pending_exit):
+            k = col[c]
+            if not alive[i, k] or np.isnan(intra[i, k]):
+                continue
+            equity = cash + sum(w.values())
+            value = w.pop(c)
+            fee = value * (COMM + SLIP + sell_tax(d)) if cost else 0
+            cash += value - fee
+            traded += value / equity / 2
+            costpaid += fee / equity
+            g.pop(c)
+            pending_exit.remove(c)
+            exited_today.add(c)
+            ntp += 1
         if i in rset:
             sold, pend, watch = set(), [], {}
             if hro is not None:
                 ranked = picks(m, F, i, strat, n * 3)
-            tgt = picks(m, F, i, strat, n)
+            tgt = targets[i][:n] if targets is not None else picks(m, F, i, strat, n)
             total = cash + sum(w.values())
             tw = {c: total / len(tgt) for c in tgt} if tgt else {}
+            for c in exited_today:
+                tw.pop(c, None)  # 매도한 몫은 현금으로 보유
+            for c in pending_exit:
+                tw[c] = w[c]
+            if pending_exit:
+                available = total - sum(w[c] for c in pending_exit)
+                wanted = sum(v for c, v in tw.items() if c not in pending_exit)
+                if wanted > available and wanted > 0:
+                    tw.update({c: v * available / wanted for c, v in tw.items() if c not in pending_exit})
             tax = sell_tax(d)
             tr0, cp0 = 0.0, 0.0
             for c in set(w) | set(tw):
@@ -439,6 +464,8 @@ def simulate(m, F, strat, freq, n, cost=True):
                 if new > 0:
                     if c not in w:
                         g[c] = 1.0
+                    elif close_tp and delta > 0:
+                        g[c] = new / (cur / g[c] + delta)
                     w[c] = new
                 else:
                     w.pop(c, None)
@@ -522,6 +549,8 @@ def simulate(m, F, strat, freq, n, cost=True):
                 w[c] *= 1 + x
                 if c in g:
                     g[c] *= 1 + x
+                    if close_tp and not np.isnan(intra[i, k]) and g[c] >= 1 + close_tp - 1e-12:
+                        pending_exit.add(c)
         for c in list(watch):
             k = col[c]
             if alive[i, k] and not np.isnan(intra[i, k]):
